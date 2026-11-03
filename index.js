@@ -24,18 +24,23 @@ client.once('ready', () => {
     console.log(`Bot ${client.user.tag} olarak giriş yaptı!`);
 });
 
+// Genişletilmiş Küfür ve Argo Listesi
 const kufurler = [
-    'aq', 'amina', 'amk', 'orospu', 'sik', 'piç', 'oc', 'orospu çocuğu',
-    'Yarrak', 'amcık', 'göt', 'sikik', 'amina koyim'
+    'aq', 'ak', 'amk', 'amq', 'mk', 'mq', 'oç', 'oe', 'pç', 'piç',
+    'amina', 'amk', 'orospu', 'sik', 'oc', 'orospu çocuğu',
+    'yarrak', 'yrk', 'amcık', 'göt', 'sikik', 'amina koyim',
+    'sg', 'prn', 'slk', 'ml', 'grzkl'
 ];
 
 client.on('messageCreate', async message => {
     if (message.author.bot) return;
 
     const icerikKucuk = message.content.toLowerCase();
+    const kelimeler = icerikKucuk.split(/\s+/);
     
-    // 1. Küfür Koruması ve Özel LOG Kanalı (Sadece Bot ve Yönetici Görebilir)
-    const kufurVarMi = kufurler.some(kufur => icerikKucuk.includes(kufur));
+    // Küfür veya argo kelime kontrolü (Kelime bazlı ve tam eşleşme/içerme)
+    const kufurVarMi = kufurler.some(kufur => kelimeler.includes(kufur) || icerikKucuk.includes(kufur));
+
     if (kufurVarMi) {
         try {
             await message.delete();
@@ -46,18 +51,18 @@ client.on('messageCreate', async message => {
                     type: ChannelType.GuildText,
                     permissionOverwrites: [
                         {
-                            id: message.guild.id, // @everyone (herkes)
-                            deny: [PermissionFlagsBits.ViewChannel], // Kimse göremez
+                            id: message.guild.id, // @everyone
+                            deny: [PermissionFlagsBits.ViewChannel],
                         },
                         {
-                            id: client.user.id, // Bot görebilir
+                            id: client.user.id,
                             allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages],
                         }
                     ]
                 }).catch(() => null);
             }
             if (logKanali) {
-                await logKanali.send(`🚨 **KÜFÜR TESPİT EDİLDİ!**\n> **Kullanıcı:** ${message.author} (${message.author.tag})\n> **Kanal:** ${message.channel}\n> **Mesaj:** "${message.content}"`);
+                await logKanali.send(`🚨 **KÜFÜR / ARGO TESPİT EDİLDİ!**\n> **Kullanıcı:** ${message.author} (${message.author.tag})\n> **Kanal:** ${message.channel}\n> **Mesaj:** "${message.content}"`);
             }
         } catch (err) {
             console.error('Küfür log hatası:', err);
@@ -65,7 +70,7 @@ client.on('messageCreate', async message => {
         return;
     }
 
-    // 2. Link ve Davet Engeli (Yalnızca Sunucu Başkanı / Yönetici atabilir)
+    // Link ve Davet Engeli
     const linkVarMi = icerikKucuk.includes('discord.gg/') || icerikKucuk.includes('http://') || icerikKucuk.includes('https://');
     if (linkVarMi && !message.member.permissions.has('Administrator')) {
         await message.delete().catch(() => {});
@@ -74,12 +79,12 @@ client.on('messageCreate', async message => {
         });
     }
 
-    // 3. .sa Komutu
+    // .sa Komutu
     if (message.content.trim().toLowerCase() === 'sa') {
         await message.reply('as hoşgeldin BRA');
     }
 
-    // 4. !kurallar Komutu
+    // !kurallar Komutu
     if (message.content.trim() === '!kurallar') {
         const kurallarMetni = `📜 **SUNUCU KURALLARI VE TOPLULUK AÇIKLAMASI**
 
@@ -104,7 +109,7 @@ Kuralları kabul ettiyseniz aşağıdaki **✅** butonuna basın ve içeri girin
         await message.channel.send({ content: kurallarMetni, components: [row] });
     }
 
-    // 5. .mute Komutu (3 Dakika)
+    // .mute Komutu (3 Dakika)
     if (message.content.trim().startsWith('.mute')) {
         if (!message.member.permissions.has('ModerateMembers') && !message.member.permissions.has('Administrator')) {
             return message.reply('Bu komutu kullanmak için yetkin yok!');
@@ -149,7 +154,7 @@ Kuralları kabul ettiyseniz aşağıdaki **✅** butonuna basın ve içeri girin
         }
     }
 
-    // 6. .nuke Komutu (Kanalı klonlamadan, direkt mesajları tertemiz siler)
+    // .nuke Komutu (Kanalı klonlamadan, direkt mesajları tertemiz siler)
     if (message.content.trim() === '.nuke') {
         if (!message.member.permissions.has('ManageChannels') && !message.member.permissions.has('Administrator')) {
             return message.reply('Bu komutu kullanmak için yetkin yok!');

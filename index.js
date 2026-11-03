@@ -1,7 +1,6 @@
-const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType } = require('discord.js');
+const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, PermissionFlagsBits } = require('discord.js');
 const http = require('http');
 
-// Render port hatası vermesin diye mini web sunucusu
 const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
     res.end('Bot aktif ve calisiyor!\n');
@@ -12,7 +11,6 @@ server.listen(PORT, () => {
     console.log(`Web sunucusu ${PORT} portunda calisiyor.`);
 });
 
-// Discord Bot Ayarları
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -26,7 +24,6 @@ client.once('ready', () => {
     console.log(`Bot ${client.user.tag} olarak giriş yaptı!`);
 });
 
-// Küfür Kelimeleri Listesi (Geliştirebilirsin)
 const kufurler = [
     'aq', 'amina', 'amk', 'orospu', 'sik', 'piç', 'oc', 'orospu çocuğu',
     'Yarrak', 'amcık', 'göt', 'sikik', 'amina koyim'
@@ -35,24 +32,30 @@ const kufurler = [
 client.on('messageCreate', async message => {
     if (message.author.bot) return;
 
-    // 1. Küfür Koruması ve LOG Kanalına Bildirim
     const icerikKucuk = message.content.toLowerCase();
+    
+    // 1. Küfür Koruması ve Özel LOG Kanalı (Sadece Bot ve Yönetici Görebilir)
     const kufurVarMi = kufurler.some(kufur => icerikKucuk.includes(kufur));
-
     if (kufurVarMi) {
         try {
-            // Mesajı sil
             await message.delete();
-            
-            // Log kanalını bul veya oluştur
-            let logKanali = message.guild.channels.cache.find(c => c.name === 'log' || c.name === 'LOG');
+            let logKanali = message.guild.channels.cache.find(c => c.name.toLowerCase() === 'log');
             if (!logKanali) {
                 logKanali = await message.guild.channels.create({
                     name: 'log',
                     type: ChannelType.GuildText,
+                    permissionOverwrites: [
+                        {
+                            id: message.guild.id, // @everyone (herkes)
+                            deny: [PermissionFlagsBits.ViewChannel], // Kimse göremez
+                        },
+                        {
+                            id: client.user.id, // Bot görebilir
+                            allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages],
+                        }
+                    ]
                 }).catch(() => null);
             }
-
             if (logKanali) {
                 await logKanali.send(`🚨 **KÜFÜR TESPİT EDİLDİ!**\n> **Kullanıcı:** ${message.author} (${message.author.tag})\n> **Kanal:** ${message.channel}\n> **Mesaj:** "${message.content}"`);
             }
@@ -62,7 +65,7 @@ client.on('messageCreate', async message => {
         return;
     }
 
-    // 2. Link ve Davet Engeli (Sunucu başkanı/yönetici hariç)
+    // 2. Link ve Davet Engeli (Yalnızca Sunucu Başkanı / Yönetici atabilir)
     const linkVarMi = icerikKucuk.includes('discord.gg/') || icerikKucuk.includes('http://') || icerikKucuk.includes('https://');
     if (linkVarMi && !message.member.permissions.has('Administrator')) {
         await message.delete().catch(() => {});
@@ -71,25 +74,21 @@ client.on('messageCreate', async message => {
         });
     }
 
-    // 3. .sa Komutu (Tekrarı önlemek için birebir eşleşme)
+    // 3. .sa Komutu
     if (message.content.trim().toLowerCase() === 'sa') {
         await message.reply('as hoşgeldin BRA');
     }
 
-    // 4. !ping Komutu
-    if (message.content.trim() === '!ping') {
-        await message.reply('Pong!');
-    }
-
-    // 5. !kurallar Komutu
+    // 4. !kurallar Komutu
     if (message.content.trim() === '!kurallar') {
         const kurallarMetni = `📜 **SUNUCU KURALLARI VE TOPLULUK AÇIKLAMASI**
 
-Sunucumuz, arkadaşlık, dostluk ve güzel vakit geçirmek amacıyla oluşturulmuş bir topluluk sunucusudur.
+Sunucumuz, arkadaşlık ve dostluk amacıyla kurulmuştur. Bütün üyelerin aşağıdaki kurallara uyması zorunludur:
 
-1. **Saygı ve hoşgörü:** Herkes birbirine saygılı davranmalıdır.
-2. **Küfür ve hakaret:** Yasaktır, log kanallarına kaydedilir.
-3. **Link ve Reklam:** Kesinlikle yasaktır.
+1. **Saygı ve hoşgörü:** Herkes birbirine saygılı davranmalıdır. Kimse kimseyi küçük düşüremez.
+2. **Küfür ve hakaret:** Sunucumuzda küfür, hakaret yasaktır; gizli log kanalına kaydedilir.
+3. **Şantaj, tehdit ve RAT:** Her türlü şantaj, tehdit, kişisel bilgileri izinsiz paylaşma ve RAT gibi zararlı yazılımlar kesinlikle yasaktır. Cezası doğrudan kalıcı sunucu yasağıdır.
+4. **Link ve Reklam:** Kesinlikle yasaktır.
 
 Kuralları kabul ettiyseniz aşağıdaki **✅** butonuna basın ve içeri girin! ❤️`;
 
@@ -105,7 +104,7 @@ Kuralları kabul ettiyseniz aşağıdaki **✅** butonuna basın ve içeri girin
         await message.channel.send({ content: kurallarMetni, components: [row] });
     }
 
-    // 6. .mute <kullanici> Komutu
+    // 5. .mute Komutu (3 Dakika)
     if (message.content.trim().startsWith('.mute')) {
         if (!message.member.permissions.has('ModerateMembers') && !message.member.permissions.has('Administrator')) {
             return message.reply('Bu komutu kullanmak için yetkin yok!');
@@ -113,12 +112,11 @@ Kuralları kabul ettiyseniz aşağıdaki **✅** butonuna basın ve içeri girin
 
         const targetUser = message.mentions.members.first();
         if (!targetUser) {
-            return message.reply('Lütfen mute atılacak bir kullanıcıyı etiketleyin. Örnek: `.mute @kullanici`');
+            return message.reply('Bir kullanıcıyı etiketleyin. Örnek: `.mute @kullanici`');
         }
 
         try {
-            // Mute rolünü bul veya oluştur (Metin kanallarında konuşmayı tamamen kapatır)
-            let muteRole = message.guild.roles.cache.find(r => r.name === 'Muted' || r.name === 'mute');
+            let muteRole = message.guild.roles.cache.find(r => r.name.toLowerCase() === 'muted' || r.name.toLowerCase() === 'mute');
             if (!muteRole) {
                 muteRole = await message.guild.roles.create({
                     name: 'Muted',
@@ -126,12 +124,11 @@ Kuralları kabul ettiyseniz aşağıdaki **✅** butonuna basın ve içeri girin
                     permissions: []
                 });
 
-                // Her kanalda yazma iznini kapat
                 message.guild.channels.cache.forEach(async (channel) => {
                     await channel.permissionOverwrites.create(muteRole, {
                         SendMessages: false,
                         AddReactions: false,
-                        Speak: true // Sese girebilir ama yazı yazamaz
+                        Speak: true
                     }).catch(() => {});
                 });
             }
@@ -139,27 +136,26 @@ Kuralları kabul ettiyseniz aşağıdaki **✅** butonuna basın ve içeri girin
             await targetUser.roles.add(muteRole);
             await message.channel.send(`**${targetUser.user.tag}** susturuldu! 3 dakika sonra otomatik yeniden açılacaktır.`);
 
-            // 3 dakika sonra mutesini otomatik aç
             setTimeout(async () => {
                 if (targetUser.roles.cache.has(muteRole.id)) {
                     await targetUser.roles.remove(muteRole);
                     message.channel.send(`**${targetUser.user.tag}** kullanıcısının mutesi otomatik olarak kaldırıldı.`);
                 }
-            }, 3 * 60 * 1000); // 3 dakika
+            }, 3 * 60 * 1000);
 
         } catch (error) {
             console.error(error);
-            message.reply('Mute atılırken bir hata oluştu, botun yetkilerini kontrol edin.');
+            message.reply('Mute atılırken bir hata oluştu.');
         }
     }
 
-    // 7. .nuke Komutu
+    // 6. .nuke Komutu (Kanalı klonlamadan, direkt mesajları tertemiz siler)
     if (message.content.trim() === '.nuke') {
         if (!message.member.permissions.has('ManageChannels') && !message.member.permissions.has('Administrator')) {
             return message.reply('Bu komutu kullanmak için yetkin yok!');
         }
 
-        const confirmMsg = await message.channel.send('Nuke atacağım. Emin misiniz? (Evet yazarak onaylayın)');
+        const confirmMsg = await message.channel.send('Nuke atacağım. Emin misiniz? (evet yazın)');
         
         const filter = m => m.author.id === message.author.id && m.content.toLowerCase() === 'evet';
         const collector = message.channel.createMessageCollector({ filter, time: 10000, max: 1 });
@@ -168,26 +164,30 @@ Kuralları kabul ettiyseniz aşağıdaki **✅** butonuna basın ve içeri girin
             await message.channel.send('tamam');
             setTimeout(async () => {
                 try {
-                    const channel = message.channel;
-                    const position = channel.position;
-                    const newChannel = await channel.clone({ position: position });
-                    await channel.delete();
-                    await newChannel.send('💥 Kanal başarıyla nuke’lendi!');
+                    let fetched;
+                    do {
+                        fetched = await message.channel.messages.fetch({ limit: 100 });
+                        if (fetched.size > 0) {
+                            await message.channel.bulkDelete(fetched, true).catch(() => {});
+                        }
+                    } while (fetched.size >= 2);
+                    
+                    const infoMsg = await message.channel.send('💥 Kanal başarıyla nuke’lendi ve temizlendi!');
+                    setTimeout(() => infoMsg.delete().catch(() => {}), 4000);
                 } catch (err) {
                     console.error('Nuke hatası:', err);
                 }
-            }, 3000); // 3 saniye sonra
+            }, 3000);
         });
 
         collector.on('end', collected => {
             if (collected.size === 0) {
-                confirmMsg.edit('Nuke işlemi zaman aşımına uğradı ve iptal edildi.').catch(() => {});
+                confirmMsg.edit('Nuke işlemi iptal edildi.').catch(() => {});
             }
         });
     }
 });
 
-// Butona basıldığında otomatik "hayatsız" rolü verme
 client.on('interactionCreate', async interaction => {
     if (!interaction.isButton()) return;
 
@@ -204,10 +204,9 @@ client.on('interactionCreate', async interaction => {
             await interaction.reply({ content: 'Kuralları kabul ettin ve **hayatsız** rolünü aldın! Keyifli sohbetler.', ephemeral: true });
         } catch (error) {
             console.error(error);
-            await interaction.reply({ content: 'Rol verilirken bir hata oluştu, lütfen botun yetkilerini kontrol edin.', ephemeral: true });
+            await interaction.reply({ content: 'Rol verilirken bir hata oluştu.', ephemeral: true });
         }
     }
 });
 
-// Botu Token ile başlat
 client.login(process.env.TOKEN);

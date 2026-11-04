@@ -25,36 +25,13 @@ const blacklist = ['oç', 'sg', 'prn', ' amk ', 'aq'];
 client.once('ready', () => {
     console.log(`[+] Bot aktif! Giriş yapılan hesap: ${client.user.tag}`);
     client.user.setActivity('Lexo Güvenlik Sistemleri');
-
-    // --- SES KASIYORUZ KANALINA GİRİŞ VE MUTE ---
-    const sesKanalimiz = client.channels.cache.find(c => c.name === 'SES KASIYORUZ' && c.type === ChannelType.GuildVoice);
-    if (sesKanalimiz) {
-        try {
-            joinVoiceChannel({
-                channelId: sesKanalimiz.id,
-                guildId: sesKanalimiz.guild.id,
-                adapterCreator: sesKanalimiz.guild.voiceAdapterCreator,
-                selfMute: true,
-                selfDeaf: false
-            });
-            console.log('[+] Bot "SES KASIYORUZ" kanalına katıldı ve sesini kapattı.');
-        } catch (err) {
-            console.error('Ses kanalına bağlanma hatası:', err);
-        }
-    } else {
-        console.log('[!] "SES KASIYORUZ" adında bir ses kanalı bulunamadı!');
-    }
 });
 
-// Statbot ve diğer bot mesajlarını anında yakalamak için son atılan mesajları takip havuzu
 let sonMesajlar = new Map();
 
 client.on('messageCreate', async message => {
-    // 1. Eğer mesaj bir bot'a aitse ve yetkisiz kanalda Statbot cevabı geldiyse direkt sil
     if (message.author.bot) {
-        // Eğer mesaj bot-komut dışındaki bir kanaldatıldıysa ve Statbot (veya başka bot) cevap verdiyse
         if (message.channel.name !== 'bot-komut') {
-            // Son 3 saniye içinde bu kanalda s?u yazan biri var mı kontrol et
             const sonYazan = sonMesajlar.get(message.channel.id);
             if (sonYazan && (Date.now() - sonYazan.zaman < 4000)) {
                 await message.delete().catch(() => {});
@@ -63,12 +40,37 @@ client.on('messageCreate', async message => {
         return;
     }
 
-    // --- KANAL DIŞI "s?u" ENGELLEYİCİ ---
+    // --- 1. SES KANALINA GİRİŞ KOMUTU (.sesegir) ---
+    if (message.content.startsWith('.sesegir')) {
+        try {
+            // Sunucudaki "SES KASIYORUM" adlı ses kanalını bulur
+            const sesKanalimiz = message.guild.channels.cache.find(c => c.name === 'SES KASIYORUM' && c.type === ChannelType.GuildVoice);
+            
+            if (!sesKanalimiz) {
+                return message.reply('❌ Sunucuda **SES KASIYORUM** adında bir ses kanalı bulamadım!');
+            }
+
+            joinVoiceChannel({
+                channelId: sesKanalimiz.id,
+                guildId: message.guild.id,
+                adapterCreator: message.guild.voiceAdapterCreator,
+                selfMute: true,  // Kendini susturur
+                selfDeaf: false
+            });
+
+            await message.channel.send(`✅ **${sesKanalimiz.name}** kanalına başarıyla giriş yapıldı ve kendim mutelendim!`);
+        } catch (err) {
+            console.error('Ses kanalına girme hatası:', err);
+            message.reply('❌ Ses kanalına bağlanırken bir hata oluştu.');
+        }
+        return;
+    }
+
+    // --- 2. KANAL DIŞI "s?u" ENGELLEYİCİ ---
     const mesajIcerigi = message.content.toLowerCase();
     if (mesajIcerigi.startsWith('s?u') || mesajIcerigi.startsWith('S?u')) {
         if (message.channel.name !== 'bot-komut') {
             try {
-                // Kanal ID'sini ve zamanını kaydet ki bot cevap verince silebilelim
                 sonMesajlar.set(message.channel.id, { userId: message.author.id, zaman: Date.now() });
 
                 await message.delete().catch(() => {});
@@ -80,12 +82,12 @@ client.on('messageCreate', async message => {
         }
     }
 
-    // --- ÖZEL ETİKET YANITI (@Lexocan 1) ---
+    // --- 3. ÖZEL ETİKET YANITI (@Lexocan 1) ---
     if (message.mentions.has(client.user) && message.content.includes('1')) {
         return message.reply('Buyrun?');
     }
 
-    // --- KÜFÜR FİLTRESİ ---
+    // --- 4. KÜFÜR FİLTRESİ ---
     const contentLower = message.content.toLowerCase();
     const isProfane = blacklist.some(word => contentLower.includes(word));
 
@@ -102,7 +104,7 @@ client.on('messageCreate', async message => {
         return; 
     }
 
-    // --- UNMUTE KOMUTU (.unmute) ---
+    // --- 5. UNMUTE KOMUTU (.unmute) ---
     if (message.content.startsWith('.unmute')) {
         const targetUser = message.mentions.members.first();
 
@@ -127,7 +129,7 @@ client.on('messageCreate', async message => {
         }
     }
 
-    // --- KURALLAR KOMUTU (.kurallar) ---
+    // --- 6. KURALLAR KOMUTU (.kurallar) ---
     if (message.content.startsWith('.kurallar')) {
         try {
             await message.delete().catch(() => {});
@@ -141,7 +143,7 @@ client.on('messageCreate', async message => {
         }
     }
 
-    // --- NUKE SİSTEMİ (.nuke) ---
+    // --- 7. NUKE SİSTEMİ (.nuke) ---
     if (message.content.startsWith('.nuke')) {
         const komutuYazan = message.author;
         const row = new ActionRowBuilder().addComponents(

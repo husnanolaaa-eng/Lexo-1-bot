@@ -164,29 +164,25 @@ client.on('messageCreate', async message => {
     }
 
     // --- 4. ULTRA GELİŞMİŞ SAYISAL & HARF BYPASS KORUMALI KÜFÜR FİLTRESİ ---
-    let hamMesaj = message.content.toLowerCase();
-    
-    hamMesaj = hamMesaj
-        .replace(/4/g, 'a')
-        .replace(/3/g, 'e')
-        .replace(/1/g, 'i')
-        .replace(/0/g, 'o')
-        .replace(/5/g, 's')
-        .replace(/7/g, 't')
-        .replace(/@/g, 'a');
+    // Eğer mesaj bot komutlarıyla başlıyorsa küfür filtresini atla (yanlış alarm önlemi)
+    const komutMu = message.content.startsWith('.sesegir') || message.content.startsWith('.mute') || 
+                    message.content.startsWith('.unmute') || message.content.startsWith('.nuke') || 
+                    message.content.startsWith('.rolbilgi') || message.content.startsWith('!kurallar');
 
-    let temizMesaj = hamMesaj
-        .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, "")
-        .replace(/\s+/g, "")
-        .replace(/ç/g, 'c')
-        .replace(/ğ/g, 'g')
-        .replace(/ı/g, 'i')
-        .replace(/ö/g, 'o')
-        .replace(/ş/g, 's')
-        .replace(/ü/g, 'u');
+    if (!komutMu) {
+        let hamMesaj = message.content.toLowerCase();
+        
+        hamMesaj = hamMesaj
+            .replace(/4/g, 'a')
+            .replace(/3/g, 'e')
+            .replace(/1/g, 'i')
+            .replace(/0/g, 'o')
+            .replace(/5/g, 's')
+            .replace(/7/g, 't')
+            .replace(/@/g, 'a');
 
-    let isProfane = blacklist.some(yasakli => {
-        let duzYasakli = yasakli.toLowerCase()
+        let temizMesaj = hamMesaj
+            .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, "")
             .replace(/\s+/g, "")
             .replace(/ç/g, 'c')
             .replace(/ğ/g, 'g')
@@ -194,22 +190,33 @@ client.on('messageCreate', async message => {
             .replace(/ö/g, 'o')
             .replace(/ş/g, 's')
             .replace(/ü/g, 'u');
-        return temizMesaj.includes(duzYasakli);
-    });
 
-    if (isProfane) {
-        try {
-            await message.delete();
-            const logChannel = message.guild.channels.cache.find(c => c.name === 'log');
-            if (logChannel) {
-                await logChannel.send(`⚠️ **Bypass / Sayısal Küfür Yakalandı!**\n👤 **Üye:** ${message.author} (${message.author.tag})\n📁 **Kanal:** ${message.channel}\n💬 **Orijinal Mesaj:** \`${message.content}\``);
-            } else {
-                await message.channel.send(`${message.author}, küfür etmek yasak!`);
+        let isProfane = blacklist.some(yasakli => {
+            let duzYasakli = yasakli.toLowerCase()
+                .replace(/\s+/g, "")
+                .replace(/ç/g, 'c')
+                .replace(/ğ/g, 'g')
+                .replace(/ı/g, 'i')
+                .replace(/ö/g, 'o')
+                .replace(/ş/g, 's')
+                .replace(/ü/g, 'u');
+            return temizMesaj.includes(duzYasakli);
+        });
+
+        if (isProfane) {
+            try {
+                await message.delete();
+                const logChannel = message.guild.channels.cache.find(c => c.name === 'log');
+                if (logChannel) {
+                    await logChannel.send(`⚠️ **Bypass / Sayısal Küfür Yakalandı!**\n👤 **Üye:** ${message.author} (${message.author.tag})\n📁 **Kanal:** ${message.channel}\n💬 **Orijinal Mesaj:** \`${message.content}\``);
+                } else {
+                    await message.channel.send(`${message.author}, küfür etmek yasak!`);
+                }
+            } catch (err) {
+                console.error('Küfür filtreleme hatası:', err);
             }
-        } catch (err) {
-            console.error('Küfür filtreleme hatası:', err);
+            return; 
         }
-        return; 
     }
 
     // --- 📜 .rolbilgi KOMUTU ---

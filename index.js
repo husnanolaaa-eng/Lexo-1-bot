@@ -60,18 +60,21 @@ client.on('guildMemberAdd', async member => {
     }
 });
 
-// --- BUTON ETKİLEŞİMİ (Kabul Et) ---
+// --- BUTON ETKİLEŞİMİ (Butona basınca "hayatsız" rolünü verme) ---
 client.on('interactionCreate', async interaction => {
     if (!interaction.isButton()) return;
 
     if (interaction.customId === 'kabul_et') {
         try {
             await interaction.deferUpdate();
-            const uyeRol = interaction.guild.roles.cache.find(r => r.name === 'Üye'); 
-            if (uyeRol) {
-                await interaction.member.roles.add(uyeRol);
+            
+            // Kullanıcıya direkt "hayatsız" rolünü atıyoruz
+            const hayatsizRolu = interaction.guild.roles.cache.find(r => r.name.toLowerCase() === 'hayatsız'); 
+            if (hayatsizRolu) {
+                await interaction.member.roles.add(hayatsizRolu);
             }
-            await interaction.followUp({ content: '✅ Kuralları kabul ettin, sunucu kilidi açıldı!', ephemeral: true });
+            
+            await interaction.followUp({ content: '✅ Kuralları kabul ettin, "hayatsız" rolü verildi ve sunucu kilidi açıldı!', ephemeral: true });
         } catch (err) {
             console.error('Kabul et buton hatası:', err);
         }

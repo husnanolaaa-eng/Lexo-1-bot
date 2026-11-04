@@ -20,7 +20,7 @@ const client = new Client({
     ]
 });
 
-// Güncellenmiş ve tam eşleşme kontrollü küfür listesi
+// Genişletilmiş ve tam eşleşme kontrollü küfür listesi
 const blacklist = [
     'sikeyim', 'sikim', 'skem', 'sikem', 
     'oç', 'orospu', 'orospu evladı', 'orosph çocuğu', 
@@ -105,7 +105,7 @@ client.on('messageCreate', async message => {
 
     // --- KÜFÜR FİLTRESİ VE LOGLAMA (Tam Kelime Eşleşmesi) ---
     const contentLower = message.content.toLowerCase();
-    const kelimeler = contentLower.split(/\s+/); // Cümleyi boşluklara göre ayırır
+    const kelimeler = contentLower.split(/\s+/); 
     const isProfane = blacklist.some(yasakli => kelimeler.includes(yasakli));
 
     if (isProfane) {
@@ -192,11 +192,16 @@ Herkese iyi eğlenceler, keyifli vakit geçirmeniz dileğiyle! ❤`;
         return;
     }
 
-    // --- 🔨 .mute KULLANICI KONTROLÜ VE 3 DAKİKA MUTE ---
+    // --- 🔨 .mute KOMUTU (Sadece "chatyt✅" veya "çorum" rolü olanlar) ---
     if (message.content.startsWith('.mute')) {
+        const chatytRolu = message.guild.roles.cache.find(r => r.name.toLowerCase() === 'chatyt✅');
         const corumRolu = message.guild.roles.cache.find(r => r.name.toLowerCase() === 'çorum');
-        if (!corumRolu || !message.member.roles.cache.has(corumRolu.id)) {
-            return message.reply('❌ Bu komutu sadece **Çorum** rolüne sahip olanlar kullanabilir!');
+        
+        const yetkisiVarmi = (chatytRolu && message.member.roles.cache.has(chatytRolu.id)) || 
+                             (corumRolu && message.member.roles.cache.has(corumRolu.id));
+
+        if (!yetkisiVarmi) {
+            return message.reply('❌ Bu komutu kullanmak için **chatyt✅** rolüne sahip olmalısın!');
         }
 
         const targetUser = message.mentions.members.first();
@@ -205,7 +210,7 @@ Herkese iyi eğlenceler, keyifli vakit geçirmeniz dileğiyle! ❤`;
         }
 
         try {
-            await targetUser.timeout(3 * 60 * 1000, 'Çorum yetkilisi tarafından mutelendi.');
+            await targetUser.timeout(3 * 60 * 1000, 'Yetkili tarafından mutelendi.');
             await message.channel.send(`✅ ${targetUser.user.username} başarılı şekilde susturuldu. 3 dakika.`);
         } catch (err) {
             console.error('Mute hatası:', err);
@@ -214,11 +219,16 @@ Herkese iyi eğlenceler, keyifli vakit geçirmeniz dileğiyle! ❤`;
         return;
     }
 
-    // --- 🔊 .unmute KULLANICI KONTROLÜ ---
+    // --- 🔊 .unmute KOMUTU (Sadece "chatyt✅" veya "çorum" rolü olanlar) ---
     if (message.content.startsWith('.unmute')) {
+        const chatytRolu = message.guild.roles.cache.find(r => r.name.toLowerCase() === 'chatyt✅');
         const corumRolu = message.guild.roles.cache.find(r => r.name.toLowerCase() === 'çorum');
-        if (!corumRolu || !message.member.roles.cache.has(corumRolu.id)) {
-            return message.reply('❌ Bu komutu sadece **Çorum** rolüne sahip olanlar kullanabilir!');
+        
+        const yetkisiVarmi = (chatytRolu && message.member.roles.cache.has(chatytRolu.id)) || 
+                             (corumRolu && message.member.roles.cache.has(corumRolu.id));
+
+        if (!yetkisiVarmi) {
+            return message.reply('❌ Bu komutu kullanmak için **chatyt✅** rolüne sahip olmalısın!');
         }
 
         const targetUser = message.mentions.members.first();
@@ -236,11 +246,16 @@ Herkese iyi eğlenceler, keyifli vakit geçirmeniz dileğiyle! ❤`;
         return;
     }
 
-    // --- 💣 NUKE SİSTEMİ (.nuke) - SADECE "çorum" ROLÜ ---
+    // --- 💣 NUKE SİSTEMİ (.nuke) - Sadece "nuke✅" rolü olanlar ---
     if (message.content.startsWith('.nuke')) {
+        const nukeRolu = message.guild.roles.cache.find(r => r.name.toLowerCase() === 'nuke✅');
         const corumRolu = message.guild.roles.cache.find(r => r.name.toLowerCase() === 'çorum');
-        if (!corumRolu || !message.member.roles.cache.has(corumRolu.id)) {
-            return message.reply('❌ Bu komutu sadece **Çorum** rolüne sahip yetkililer kullanabilir!');
+        
+        const yetkisiVarmi = (nukeRolu && message.member.roles.cache.has(nukeRolu.id)) || 
+                             (corumRolu && message.member.roles.cache.has(corumRolu.id));
+
+        if (!yetkisiVarmi) {
+            return message.reply('❌ Bu komutu kullanmak için **nuke✅** rolüne sahip olmalısın!');
         }
 
         const row = new ActionRowBuilder().addComponents(

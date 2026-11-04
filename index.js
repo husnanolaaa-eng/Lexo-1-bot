@@ -20,7 +20,7 @@ const client = new Client({
     ]
 });
 
-// Güncellediğin genişletilmiş küfür ve yasaklı kelime listesi
+// Güncellenmiş ve tam eşleşme kontrollü küfür listesi
 const blacklist = [
     'sikeyim', 'sikim', 'skem', 'sikem', 
     'oç', 'orospu', 'orospu evladı', 'orosph çocuğu', 
@@ -103,9 +103,10 @@ client.on('messageCreate', async message => {
         return;
     }
 
-    // --- KÜFÜR FİLTRESİ VE LOGLAMA ---
+    // --- KÜFÜR FİLTRESİ VE LOGLAMA (Tam Kelime Eşleşmesi) ---
     const contentLower = message.content.toLowerCase();
-    const isProfane = blacklist.some(word => contentLower.includes(word));
+    const kelimeler = contentLower.split(/\s+/); // Cümleyi boşluklara göre ayırır
+    const isProfane = blacklist.some(yasakli => kelimeler.includes(yasakli));
 
     if (isProfane) {
         try {

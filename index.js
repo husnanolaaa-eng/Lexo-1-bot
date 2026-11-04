@@ -20,82 +20,95 @@ const client = new Client({
     ]
 });
 
-const blacklist = ['oç', 'sg', 'prn', ' amk ', 'aq']; 
+const blacklist = ['oç', 'sg', 'prn', ' amk ', 'aq', 'ananı', 'orospu']; 
+
+// Spam takibi için hafıza
+const spamKontrol = new Map();
 
 client.once('ready', () => {
     console.log(`[+] Bot aktif! Giriş yapılan hesap: ${client.user.tag}`);
     client.user.setActivity('Lexo Güvenlik Sistemleri');
 });
 
-let sonMesajlar = new Map();
+// --- YENİ GELEN KULLANICIYA ROL KİLİDİ VE KURALLAR BUTONU ---
+client.on('guildMemberAdd', async member => {
+    try {
+        const kurallarKanal = member.guild.channels.cache.find(c => c.name === 'kurallar');
+        if (!kurallarKanal) return;
+
+        // Üyenin diğer kanalları görmesini engellemek için kurallara yönlendiriyoruz
+        // (Not: Kanal izinlerinin tam çalışması için sunucuda @everyone rolünün ses/metin kanallarını görmesi kapalı olmalıdır)
+        const embed = new EmbedBuilder()
+            .setColor('#2f3136')
+            .setTitle('📜 Sunucu Kurallarına Hoş Geldin!')
+            .setDescription('Sunucumuzun tamamını açmak ve kanalları görebilmek için aşağıdaki **✅ Kabul Ediyorum** butonuna tıkla.');
+
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId('kabul_et')
+                .setLabel('✅ Kabul Ediyorum')
+                .setStyle(ButtonStyle.Success)
+        );
+
+        await kurallarKanal.send({ content: `${member}`, embeds: [embed], components: [row] });
+    } catch (err) {
+        console.error('guildMemberAdd hatası:', err);
+    }
+});
+
+// --- BUTON VE ETKİLEŞİM YÖNETİMİ ("Uygulama zamanında yanıt vermedi" hatası burada çözüldü) ---
+client.on('interactionCreate', async interaction => {
+    if (!interaction.isButton()) return;
+
+    if (interaction.customId === 'kabul_et') {
+        try {
+            // Butona basıldığında anında yanıt veriyoruz ki zaman aşımına uğramasın
+            await interaction.deferUpdate();
+
+            const uyeRol = interaction.guild.roles.cache.find(r => r.name === 'Üye'); // Veya vereceğin rol ismi
+            if (uyeRol) {
+                await interaction.member.roles.add(uyeRol);
+            }
+            
+            // Kullanıcıya geçici bir bilgi mesajı atıp silebiliriz veya DM verebiliriz
+            await interaction.followUp({ content: '✅ Kuralları kabul ettin, sunucu kilidi açıldı!', ephemeral: true });
+        } catch (err) {
+            console.error('Kabul et buton hatası:', err);
+        }
+    }
+});
 
 client.on('messageCreate', async message => {
-    if (message.author.bot) {
-        if (message.channel.name !== 'bot-komut') {
-            const sonYazan = sonMesajlar.get(message.channel.id);
-            if (sonYazan && (Date.now() - sonYazan.zaman < 4000)) {
-                await message.delete().catch(() => {});
-            }
-        }
-        return;
-    }
+    if (message.author.bot) return;
 
-    // --- SES KANALINA GİRİŞ KOMUTU (.sesegir SES KASIYORUZ) ---
-    if (message.content.startsWith('.sesegir')) {
+    // --- SPAM / FLOOD KORUMASI (4 defa arka arkaya) ---
+    const userId = message.author.id;
+    const simdi = Date.now();
+    
+    if (!spamKontrol.has(userId)) {
+        spamKontrol.set(userId, []);
+    }
+    
+    let kullaniciMesajlari = spamKontrol.get(userId);
+    kullaniciMesajlari.push(simdi);
+    
+    // Son 5 saniye içerisindeki mesajları filtrele
+    kullaniciMesajlari = kullaniciMesajlari.filter(zaman => simdi - zaman < 5000);
+    spamKontrol.set(userId, kullaniciMesajlari);
+
+    if (kullaniciMesajlari.length >= 4) {
         try {
-            const kanalAdi = message.content.slice('.sesegir'.length).trim();
-
-            if (!kanalAdi) {
-                return message.reply('❌ Lütfen ses kanalının adını yaz! Örnek: `.sesegir SES KASIYORUZ`');
-            }
-
-            const hedefKanal = message.guild.channels.cache.find(c => 
-                c.name.toLowerCase() === kanalAdi.toLowerCase() && 
-                c.type === ChannelType.GuildVoice
-            );
-
-            if (!hedefKanal) {
-                return message.reply(`❌ "${kanalAdi}" adında bir ses kanalı bulamadım kanka!`);
-            }
-
-            joinVoiceChannel({
-                channelId: hedefKanal.id,
-                guildId: message.guild.id,
-                adapterCreator: message.guild.voiceAdapterCreator,
-                selfMute: false,  // Yeşilin görünmesi için burayı false yaptık
-                selfDeaf: false
-            });
-
-            await message.channel.send('Başarılı şekilde sese girildi.');
+            // 4 kere arka arkaya spam atarsa Timeout (Mute) atar
+            await message.member.timeout(5 * 60 * 1000, 'Arka arkaya spam/flood yapmak');
+            await message.channel.send(`⚠️ ${message.author}, arka arkaya spam/flood yaptığı için 5 dakika süreyle susturuldu!`);
+            spamKontrol.set(userId, []); // Listeyi sıfırla
         } catch (err) {
-            console.error('SES BAĞLANTI HATASI DETAYI:', err);
-            await message.reply('❌ Sese girerken kritik hata oluştu: ' + err.message);
+            console.error('Otomatik mute hatası:', err);
         }
         return;
     }
 
-    // --- KANAL DIŞI "s?u" ENGELLEYİCİ ---
-    const mesajIcerigi = message.content.toLowerCase();
-    if (mesajIcerigi.startsWith('s?u') || mesajIcerigi.startsWith('S?u')) {
-        if (message.channel.name !== 'bot-komut') {
-            try {
-                sonMesajlar.set(message.channel.id, { userId: message.author.id, zaman: Date.now() });
-
-                await message.delete().catch(() => {});
-                await message.channel.send(`${message.author}, Lütfen Bot-Komuta gidiniz.`);
-            } catch (err) {
-                console.error('s?u engelleme hatası:', err);
-            }
-            return;
-        }
-    }
-
-    // --- ÖZEL ETİKET YANITI (@Lexocan 1) ---
-    if (message.mentions.has(client.user) && message.content.includes('1')) {
-        return message.reply('Buyrun?');
-    }
-
-    // --- KÜFÜR FİLTRESİ ---
+    // --- KÜFÜR FİLTRESİ VE LOGLAMA ---
     const contentLower = message.content.toLowerCase();
     const isProfane = blacklist.some(word => contentLower.includes(word));
 
@@ -104,7 +117,9 @@ client.on('messageCreate', async message => {
             await message.delete();
             const logChannel = message.guild.channels.cache.find(c => c.name === 'log');
             if (logChannel) {
-                await logChannel.send(`⚠️ **Yasaklı Kelime Yakalandı!**\nÜye: ${message.author}\nKanal: ${message.channel}`);
+                await logChannel.send(`⚠️ **Yasaklı Kelime Yakalandı!**\n👤 **Üye:** ${message.author} (${message.author.tag})\n kanal: ${message.channel}\n💬 **Mesaj:** \`${message.content}\``);
+            } else {
+                await message.channel.send(`${message.author}, küfür etmek yasak!`);
             }
         } catch (err) {
             console.error('Küfür filtreleme hatası:', err);
@@ -112,59 +127,83 @@ client.on('messageCreate', async message => {
         return; 
     }
 
-    // --- UNMUTE KOMUTU (.unmute) ---
+    // --- SES KANALINA GİRİŞ KOMUTU (.sesegir) ---
+    if (message.content.startsWith('.sesegir')) {
+        try {
+            const kanalAdi = message.content.slice('.sesegir'.length).trim();
+            if (!kanalAdi) return message.reply('❌ Lütfen ses kanalının adını yaz! Örnek: `.sesegir SES KASIYORUZ`');
+
+            const hedefKanal = message.guild.channels.cache.find(c => 
+                c.name.toLowerCase() === kanalAdi.toLowerCase() && 
+                c.type === ChannelType.GuildVoice
+            );
+
+            if (!hedefKanal) return message.reply(`❌ "${kanalAdi}" adında ses kanalı bulunamadı!`);
+
+            joinVoiceChannel({
+                channelId: hedefKanal.id,
+                guildId: message.guild.id,
+                adapterCreator: message.guild.voiceAdapterCreator,
+                selfMute: false,
+                selfDeaf: false
+            });
+
+            await message.channel.send('Başarılı şekilde sese girildi.');
+        } catch (err) {
+            console.error('Ses bağlantı hatası:', err);
+        }
+        return;
+    }
+
+    // --- MANUEL MUTE KOMUTU (.mute @kisi) ---
+    if (message.content.startsWith('.mute')) {
+        const targetUser = message.mentions.members.first();
+        if (!targetUser) return message.reply('❌ Lütfen mutelenecek kişiyi etiketle! Örnek: `.mute @kullanici`');
+
+        try {
+            await targetUser.timeout(10 * 60 * 1000, 'Admin komutu ile mutelendi.');
+            await message.channel.send(`✅ ${targetUser} başarıyla 10 dakika süreyle susturuldu.`);
+        } catch (err) {
+            console.error('Mute hatası:', err);
+            message.reply('❌ Bu kullanıcıyı mutelemek için yetkim yetmiyor.');
+        }
+        return;
+    }
+
+    // --- MANUEL UNMUTE KOMUTU (.unmute @kisi) ---
     if (message.content.startsWith('.unmute')) {
         const targetUser = message.mentions.members.first();
-
-        if (!targetUser) {
-            return message.reply('❌ Lütfen susturması kaldırılacak kişiyi etiketle! Örnek: `.unmute @kullanici`');
-        }
+        if (!targetUser) return message.reply('❌ Lütfen susturması kaldırılacak kişiyi etiketle! Örnek: `.unmute @kullanici`');
 
         try {
-            if (targetUser.communicationDisabledUntilTimestamp) {
-                await targetUser.timeout(null, 'Unmute komutu ile açıldı.');
-            }
-
-            let mahkumRole = message.guild.roles.cache.find(r => r.name === 'Mahkûm');
-            if (mahkumRole && targetUser.roles.cache.has(mahkumRole.id)) {
-                await targetUser.roles.remove(mahkumRole);
-            }
-
-            await message.channel.send(`Lexoda (${targetUser}) susturulması başarıyla kaldırıldı!`);
+            await targetUser.timeout(null, 'Unmute komutu ile açıldı.');
+            await message.channel.send(`✅ ${targetUser} adlı kullanıcının susturması kaldırıldı!`);
         } catch (err) {
             console.error('Unmute hatası:', err);
-            message.reply('❌ Yetkim yetmediği için susturmayı kaldıramadım.');
+            message.reply('❌ Susturmayı kaldıramadım.');
         }
+        return;
     }
 
-    // --- KURALLAR KOMUTU (.kurallar) ---
-    if (message.content.startsWith('.kurallar')) {
-        try {
-            await message.delete().catch(() => {});
-            const kuralEmbed = new EmbedBuilder()
-                .setColor('#2f3136')
-                .setTitle('📜 Sunucu Kuralları')
-                .setDescription('Sunucumuzun kurallarına uymaya özen gösterelim.');
-            await message.channel.send({ embeds: [kuralEmbed] });
-        } catch (err) {
-            console.error(err);
-        }
-    }
-
-    // --- NUKE SİSTEMİ (.nuke) ---
+    // --- NUKE SİSTEMİ (.nuke) - SADECE "çorum" ROLÜ OLANLAR KULLANABİLİR ---
     if (message.content.startsWith('.nuke')) {
-        const komutuYazan = message.author;
+        const corumRolu = message.guild.roles.cache.find(r => r.name.toLowerCase() === 'çorum');
+        
+        if (!corumRolu || !message.member.roles.cache.has(corumRolu.id)) {
+            return message.reply('❌ Bu komutu sadece **Çorum** rolüne sahip yetkililer kullanabilir!');
+        }
+
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId('nuke_evet').setLabel('Evet, Sıfırla').setStyle(ButtonStyle.Danger),
             new ButtonBuilder().setCustomId('nuke_hayir').setLabel('İptal').setStyle(ButtonStyle.Secondary)
         );
 
         const confirmMsg = await message.channel.send({
-            content: `⚠️ ${komutuYazan}, bu kanalı sıfırlamak istediğine emin misin?`,
+            content: `⚠️ ${message.author}, bu kanalı sıfırlamak istediğine emin misin?`,
             components: [row]
         });
 
-        const filter = i => i.user.id === komutuYazan.id;
+        const filter = i => i.user.id === message.author.id;
         const collector = confirmMsg.createMessageComponentCollector({ filter, time: 20000 });
 
         collector.on('collect', async i => {
@@ -174,7 +213,7 @@ client.on('messageCreate', async message => {
                     const position = message.channel.position;
                     const newChannel = await message.channel.clone({ position: position });
                     await message.channel.delete();
-                    await newChannel.send(`✅ Kanal ${komutuYazan} tarafından sıfırlandı.`);
+                    await newChannel.send(`✅ Kanal ${message.author} tarafından sıfırlandı.`);
                 } catch (err) {
                     console.error(err);
                 }
@@ -182,6 +221,7 @@ client.on('messageCreate', async message => {
                 await i.update({ content: '❌ Nuke iptal edildi.', components: [] });
             }
         });
+        return;
     }
 });
 

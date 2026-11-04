@@ -8,13 +8,15 @@ const {
     ButtonStyle,
     EmbedBuilder 
 } = require('discord.js');
+const { joinVoiceChannel } = require('@discordjs/voice'); // Ses kanalı için gerekli
 
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildMembers
+        GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.GuildVoiceStates // Ses kanalları için gerekli niyet
     ]
 });
 
@@ -24,12 +26,62 @@ const blacklist = ['oç', 'sg', 'prn', ' amk ', 'aq'];
 client.once('ready', () => {
     console.log(`[+] Bot aktif! Giriş yapılan hesap: ${client.user.tag}`);
     client.user.setActivity('Lexo Güvenlik Sistemleri');
+
+    // --- SES KASIYORUZ KANALINA GİRİŞ VE KENDİNİ MUTELEME ---
+    // Sunucudaki "SES KASIYORUZ" adlı ses kanalını bulup otomatik girer ve kendini muteler
+    const sesKanalimiz = client.channels.cache.find(c => c.name === 'SES KASIYORUZ' && c.type === ChannelType.GuildVoice);
+    if (sesKanalimiz) {
+        try {
+            const connection = joinVoiceChannel({
+                channelId: sesKanalimiz.id,
+                guildId: sesKanalimiz.guild.id,
+                adapterCreator: sesKanalimiz.guild.voiceAdapterCreator,
+                selfMute: true, // Kendini susturur (mute)
+                selfDeaf: false
+            });
+            console.log('[+] Bot "SES KASIYORUZ" kanalına katıldı ve sesini kapattı.');
+        } catch (err) {
+            console.error('Ses kanalına bağlanma hatası:', err);
+        }
+    }
 });
 
 client.on('messageCreate', async message => {
     if (message.author.bot) return;
 
-    // --- 1. KÜFÜR VE ARGO FİLTRESİ ---
+    // --- 1. KANAL DIŞI "s?u" ENGELLEYİCİ VE STATBOT TEMİZLİĞİ ---
+    if (message.content.startsWith('s?u')) {
+        if (message.channel.name !== 'bot-komut') {
+            try {
+                // Kullanıcının mesajını ve hemen ardından gelecek Statbot cevabını yakalamak için kısa süreli mesaj dinleyici
+                const channel = message.channel;
+                const authorId = message.author.id;
+
+                await message.delete().catch(() => {});
+
+                // Statbot'un vereceği yanıtı yakalamak için 3 saniyelik collector
+                const filterStat = m => m.author.bot && (m.content.includes(authorId) || m.embeds.length > 0);
+                const collectorStat = channel.createMessageCollector({ filter: filterStat, time: 3000, max: 1 });
+
+                collectorStat.on('collect', async statMsg => {
+                    await statMsg.delete().catch(() => {});
+                });
+
+                await channel.send(`${message.author}, Lütfen Bot-Komuta gidiniz.`);
+            } catch (err) {
+                console.error('s?u engelleme hatası:', err);
+            }
+            return;
+        }
+    }
+
+    // --- 2. ÖZEL ETİKET YANITI (@Lexocan 1) ---
+    // Not: Botun kendi kullanıcı adı veya etiketlenme durumunu kontrol eder
+    if (message.mentions.has(client.user) && message.content.includes('1')) {
+        return message.reply('Buyrun?');
+    }
+
+    // --- 3. KÜFÜR VE ARGO FİLTRESİ ---
     const contentLower = message.content.toLowerCase();
     const isProfane = blacklist.some(word => contentLower.includes(word));
 
@@ -46,10 +98,37 @@ client.on('messageCreate', async message => {
         return; 
     }
 
-    // --- 2. KURALLAR KOMUTU (.kurallar) ---
+    // --- 4. UNMUTE KOMUTU (.unmute) ---
+    if (message.content.startsWith('.unmute')) {
+        const targetUser = message.mentions.members.first();
+
+        if (!targetUser) {
+            return message.reply('❌ Lütfen susturması kaldırılacak kişiyi etiketle! Örnek: `.unmute @kullanici`');
+        }
+
+        try {
+            // Zaman aşımı (Timeout) cezasını kaldırır
+            if (targetUser.communicationDisabledUntilTimestamp) {
+                await targetUser.timeout(null, 'Unmute komutu ile açıldı.');
+            }
+
+            // Eğer "Mahkûm" rolü varsa onu da sökebiliriz
+            let mahkumRole = message.guild.roles.cache.find(r => r.name === 'Mahkûm');
+            if (mahkumRole && targetUser.roles.cache.has(mahkumRole.id)) {
+                await targetUser.roles.remove(mahkumRole);
+            }
+
+            await message.channel.send(`Lexoda (${targetUser}'sün) susturulması başarıyla kaldırıldı!`);
+        } catch (err) {
+            console.error('Unmute hatası:', err);
+            message.reply('❌ Kullanıcının susturması kaldırılırken bir hata oluştu (Yetkim yetmiyor olabilir).');
+        }
+    }
+
+    // --- 5. KURALLAR KOMUTU (.kurallar) ---
     if (message.content.startsWith('.kurallar')) {
         try {
-            await message.delete().catch(() => {}); // Komut mesajını temizle
+            await message.delete().catch(() => {});
 
             const kuralEmbed = new EmbedBuilder()
                 .setColor('#2f3136')
@@ -70,7 +149,7 @@ client.on('messageCreate', async message => {
         }
     }
 
-    // --- 3. NUKE SİSTEMİ (Kişi Kilidi ile Güvenli) ---
+    // --- 6. NUKE SİSTEMİ (Kişi Kilidi ile Güvenli) ---
     if (message.content.startsWith('.nuke')) {
         const komutuYazan = message.author;
 
@@ -116,7 +195,7 @@ client.on('messageCreate', async message => {
         });
     }
 
-    // --- 4. MAHKEME SİSTEMİ ---
+    // --- 7. MAHKEME SİSTEMİ ---
     if (message.content.startsWith('.mahkeme')) {
         const targetUser = message.mentions.members.first();
 
@@ -187,8 +266,7 @@ client.on('messageCreate', async message => {
     }
 });
 
-client.login(process.env.DISCORD_TOKEN);
-// --- 5. RENDER UYKU ÖNLEYİCİ (KEEP-ALIVE) ---
+// --- RENDER UYKU ÖNLEYİCİ (KEEP-ALIVE) ---
 const http = require('http');
 const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
@@ -200,3 +278,4 @@ server.listen(PORT, () => {
     console.log(`[+] Keep-alive sunucusu ${PORT} portunda çalışıyor.`);
 });
 
+client.login(process.env.DISCORD_TOKEN);

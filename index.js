@@ -43,36 +43,36 @@ client.on('messageCreate', async message => {
     // --- SES KANALINA GİRİŞ KOMUTU (.sesegir SES KASIYORUZ) ---
     if (message.content.startsWith('.sesegir')) {
         try {
-            // .sesegir komutundan sonra yazılan ismi al ve başındaki/sonundaki boşlukları temizle
             const kanalAdi = message.content.slice('.sesegir'.length).trim();
 
             if (!kanalAdi) {
-                return message.reply('❌ Lütfen bir ses kanalının adını yaz! Örnek: `.sesegir SES KASIYORUZ`');
+                return message.reply('❌ Lütfen ses kanalının adını yaz! Örnek: `.sesegir SES KASIYORUZ`');
             }
 
-            // Sunucudaki ses kanalları arasında ismi eşleşeni bul
+            // Sunucudaki ses kanallarını konsola listeletelim ki eşleşip eşleşmediğini görebilelim
             const hedefKanal = message.guild.channels.cache.find(c => 
                 c.name.toLowerCase() === kanalAdi.toLowerCase() && 
                 c.type === ChannelType.GuildVoice
             );
 
             if (!hedefKanal) {
-                return message.reply(`❌ "${kanalAdi}" adında bir ses kanalı bulamadım kanka! İsmi doğru yazdığından emin ol.`);
+                return message.reply(`❌ "${kanalAdi}" adında bir ses kanalı bulamadım kanka!`);
             }
 
-            // Sese bağlan
+            console.log(`[!] Ses bağlantısı kuruluyor: Kanal ID -> ${hedefKanal.id}, Guild ID -> ${message.guild.id}`);
+
             joinVoiceChannel({
                 channelId: hedefKanal.id,
                 guildId: message.guild.id,
                 adapterCreator: message.guild.voiceAdapterCreator,
-                selfMute: true,  // Kendini muteler
+                selfMute: true,
                 selfDeaf: false
             });
 
             await message.channel.send('Başarılı şekilde sese girildi.');
         } catch (err) {
-            console.error('Ses kanalına girme hatası:', err);
-            message.reply('❌ Ses kanalına bağlanırken bir hata oluştu: ' + err.message);
+            console.error('SES BAĞLANTI HATASI DETAYI:', err);
+            await message.reply('❌ Sese girerken kritik hata oluştu: ' + err.message);
         }
         return;
     }

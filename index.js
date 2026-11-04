@@ -188,3 +188,15 @@ client.on('messageCreate', async message => {
 });
 
 client.login(process.env.DISCORD_TOKEN);
+// --- 5. RENDER UYKU ÖNLEYİCİ (KEEP-ALIVE) ---
+const http = require('http');
+const server = http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('Lexo Bot Aktif ve Dinlemede!\n');
+});
+
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+    console.log(`[+] Keep-alive sunucusu ${PORT} portunda çalışıyor.`);
+});
+

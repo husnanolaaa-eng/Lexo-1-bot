@@ -40,14 +40,14 @@ client.on('messageCreate', async message => {
         return;
     }
 
-    // --- 1. SES KANALINA GİRİŞ KOMUTU (.sesegir) ---
+    // --- SES KANALINA GİRİŞ KOMUTU (.sesegir) ---
+    // Artık komutu yazan kişinin bağlı olduğu ses kanalına direkt girer!
     if (message.content.startsWith('.sesegir')) {
         try {
-            // Sunucudaki "SES KASIYORUM" adlı ses kanalını bulur
-            const sesKanalimiz = message.guild.channels.cache.find(c => c.name === 'SES KASIYORUM' && c.type === ChannelType.GuildVoice);
+            const sesKanalimiz = message.member.voice.channel;
             
             if (!sesKanalimiz) {
-                return message.reply('❌ Sunucuda **SES KASIYORUM** adında bir ses kanalı bulamadım!');
+                return message.reply('❌ Önce bir ses kanalına girmelisin kanka, yoksa nereye gireceğini bilemem!');
             }
 
             joinVoiceChannel({
@@ -58,15 +58,15 @@ client.on('messageCreate', async message => {
                 selfDeaf: false
             });
 
-            await message.channel.send(`✅ **${sesKanalimiz.name}** kanalına başarıyla giriş yapıldı ve kendim mutelendim!`);
+            await message.channel.send(`✅ **${sesKanalimiz.name}** kanalına giriş yapıldı ve kendim mutelendim!`);
         } catch (err) {
             console.error('Ses kanalına girme hatası:', err);
-            message.reply('❌ Ses kanalına bağlanırken bir hata oluştu.');
+            message.reply('❌ Ses kanalına bağlanırken bir hata oluştu: ' + err.message);
         }
         return;
     }
 
-    // --- 2. KANAL DIŞI "s?u" ENGELLEYİCİ ---
+    // --- KANAL DIŞI "s?u" ENGELLEYİCİ ---
     const mesajIcerigi = message.content.toLowerCase();
     if (mesajIcerigi.startsWith('s?u') || mesajIcerigi.startsWith('S?u')) {
         if (message.channel.name !== 'bot-komut') {
@@ -82,12 +82,12 @@ client.on('messageCreate', async message => {
         }
     }
 
-    // --- 3. ÖZEL ETİKET YANITI (@Lexocan 1) ---
+    // --- ÖZEL ETİKET YANITI (@Lexocan 1) ---
     if (message.mentions.has(client.user) && message.content.includes('1')) {
         return message.reply('Buyrun?');
     }
 
-    // --- 4. KÜFÜR FİLTRESİ ---
+    // --- KÜFÜR FİLTRESİ ---
     const contentLower = message.content.toLowerCase();
     const isProfane = blacklist.some(word => contentLower.includes(word));
 
@@ -104,7 +104,7 @@ client.on('messageCreate', async message => {
         return; 
     }
 
-    // --- 5. UNMUTE KOMUTU (.unmute) ---
+    // --- UNMUTE KOMUTU (.unmute) ---
     if (message.content.startsWith('.unmute')) {
         const targetUser = message.mentions.members.first();
 
@@ -129,7 +129,7 @@ client.on('messageCreate', async message => {
         }
     }
 
-    // --- 6. KURALLAR KOMUTU (.kurallar) ---
+    // --- KURALLAR KOMUTU (.kurallar) ---
     if (message.content.startsWith('.kurallar')) {
         try {
             await message.delete().catch(() => {});
@@ -143,7 +143,7 @@ client.on('messageCreate', async message => {
         }
     }
 
-    // --- 7. NUKE SİSTEMİ (.nuke) ---
+    // --- NUKE SİSTEMİ (.nuke) ---
     if (message.content.startsWith('.nuke')) {
         const komutuYazan = message.author;
         const row = new ActionRowBuilder().addComponents(

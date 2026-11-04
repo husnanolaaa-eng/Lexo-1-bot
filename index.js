@@ -20,7 +20,15 @@ const client = new Client({
     ]
 });
 
-const blacklist = ['oç', 'sg', 'prn', ' amk ', 'aq', 'ananı', 'orospu']; 
+// Güncellediğin genişletilmiş küfür ve yasaklı kelime listesi
+const blacklist = [
+    'sikeyim', 'sikim', 'skem', 'sikem', 
+    'oç', 'orospu', 'orospu evladı', 'orosph çocuğu', 
+    'ibne', 'ibine', 'piç', 'pezevenk', 'pzvnk', 
+    'yarrak', 'yrrm', 'yrm', 'yrk', 'yarak', 'yark', 
+    'or', 'oe', 'oçoe', 'porno', 'seks', 'sik', 'parçalarım'
+];
+
 const spamKontrol = new Map();
 
 client.once('ready', () => {
@@ -196,7 +204,6 @@ Herkese iyi eğlenceler, keyifli vakit geçirmeniz dileğiyle! ❤`;
         }
 
         try {
-            // Tam 3 dakika (180.000 milisaniye) mute atılıyor
             await targetUser.timeout(3 * 60 * 1000, 'Çorum yetkilisi tarafından mutelendi.');
             await message.channel.send(`✅ ${targetUser.user.username} başarılı şekilde susturuldu. 3 dakika.`);
         } catch (err) {

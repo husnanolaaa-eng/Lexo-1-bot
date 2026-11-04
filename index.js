@@ -21,8 +21,6 @@ const client = new Client({
 });
 
 const blacklist = ['oç', 'sg', 'prn', ' amk ', 'aq', 'ananı', 'orospu']; 
-
-// Spam takibi için hafıza
 const spamKontrol = new Map();
 
 client.once('ready', () => {
@@ -30,18 +28,16 @@ client.once('ready', () => {
     client.user.setActivity('Lexo Güvenlik Sistemleri');
 });
 
-// --- YENİ GELEN KULLANICIYA ROL KİLİDİ VE KURALLAR BUTONU ---
+// --- YENİ ÜYE KATILIMI (Kurallar Butonlu Mesajı Gönderme) ---
 client.on('guildMemberAdd', async member => {
     try {
         const kurallarKanal = member.guild.channels.cache.find(c => c.name === 'kurallar');
         if (!kurallarKanal) return;
 
-        // Üyenin diğer kanalları görmesini engellemek için kurallara yönlendiriyoruz
-        // (Not: Kanal izinlerinin tam çalışması için sunucuda @everyone rolünün ses/metin kanallarını görmesi kapalı olmalıdır)
         const embed = new EmbedBuilder()
             .setColor('#2f3136')
             .setTitle('📜 Sunucu Kurallarına Hoş Geldin!')
-            .setDescription('Sunucumuzun tamamını açmak ve kanalları görebilmek için aşağıdaki **✅ Kabul Ediyorum** butonuna tıkla.');
+            .setDescription('Sunucumuzun tamamını görebilmek ve sohbet edebilmek için lütfen aşağıdaki **✅ Kabul Ediyorum** butonuna tıkla.');
 
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
@@ -56,21 +52,17 @@ client.on('guildMemberAdd', async member => {
     }
 });
 
-// --- BUTON VE ETKİLEŞİM YÖNETİMİ ("Uygulama zamanında yanıt vermedi" hatası burada çözüldü) ---
+// --- BUTON ETKİLEŞİMİ (Kabul Et) ---
 client.on('interactionCreate', async interaction => {
     if (!interaction.isButton()) return;
 
     if (interaction.customId === 'kabul_et') {
         try {
-            // Butona basıldığında anında yanıt veriyoruz ki zaman aşımına uğramasın
             await interaction.deferUpdate();
-
-            const uyeRol = interaction.guild.roles.cache.find(r => r.name === 'Üye'); // Veya vereceğin rol ismi
+            const uyeRol = interaction.guild.roles.cache.find(r => r.name === 'Üye'); 
             if (uyeRol) {
                 await interaction.member.roles.add(uyeRol);
             }
-            
-            // Kullanıcıya geçici bir bilgi mesajı atıp silebiliriz veya DM verebiliriz
             await interaction.followUp({ content: '✅ Kuralları kabul ettin, sunucu kilidi açıldı!', ephemeral: true });
         } catch (err) {
             console.error('Kabul et buton hatası:', err);
@@ -81,27 +73,22 @@ client.on('interactionCreate', async interaction => {
 client.on('messageCreate', async message => {
     if (message.author.bot) return;
 
-    // --- SPAM / FLOOD KORUMASI (4 defa arka arkaya) ---
+    // --- SPAM / FLOOD KORUMASI (4 defa arka arkaya ise 3 dakika mute) ---
     const userId = message.author.id;
     const simdi = Date.now();
     
-    if (!spamKontrol.has(userId)) {
-        spamKontrol.set(userId, []);
-    }
-    
+    if (!spamKontrol.has(userId)) spamKontrol.set(userId, []);
     let kullaniciMesajlari = spamKontrol.get(userId);
     kullaniciMesajlari.push(simdi);
     
-    // Son 5 saniye içerisindeki mesajları filtrele
     kullaniciMesajlari = kullaniciMesajlari.filter(zaman => simdi - zaman < 5000);
     spamKontrol.set(userId, kullaniciMesajlari);
 
     if (kullaniciMesajlari.length >= 4) {
         try {
-            // 4 kere arka arkaya spam atarsa Timeout (Mute) atar
-            await message.member.timeout(5 * 60 * 1000, 'Arka arkaya spam/flood yapmak');
-            await message.channel.send(`⚠️ ${message.author}, arka arkaya spam/flood yaptığı için 5 dakika süreyle susturuldu!`);
-            spamKontrol.set(userId, []); // Listeyi sıfırla
+            await message.member.timeout(3 * 60 * 1000, 'Arka arkaya spam/flood yapmak');
+            await message.channel.send(`⚠️ ${message.author}, arka arkaya spam/flood yaptığı için 3 dakika süreyle susturuldu!`);
+            spamKontrol.set(userId, []);
         } catch (err) {
             console.error('Otomatik mute hatası:', err);
         }
@@ -117,7 +104,7 @@ client.on('messageCreate', async message => {
             await message.delete();
             const logChannel = message.guild.channels.cache.find(c => c.name === 'log');
             if (logChannel) {
-                await logChannel.send(`⚠️ **Yasaklı Kelime Yakalandı!**\n👤 **Üye:** ${message.author} (${message.author.tag})\n kanal: ${message.channel}\n💬 **Mesaj:** \`${message.content}\``);
+                await logChannel.send(`⚠️ **Yasaklı Kelime Yakalandı!**\n👤 **Üye:** ${message.author} (${message.author.tag})\n📁 **Kanal:** ${message.channel}\n💬 **Mesaj:** \`${message.content}\``);
             } else {
                 await message.channel.send(`${message.author}, küfür etmek yasak!`);
             }
@@ -125,6 +112,47 @@ client.on('messageCreate', async message => {
             console.error('Küfür filtreleme hatası:', err);
         }
         return; 
+    }
+
+    // --- 📜 !KURALLAR KOMUTU ---
+    if (message.content.startsWith('!kurallar')) {
+        try {
+            await message.delete().catch(() => {});
+            
+            const kurallarMetni = `📜 **SUNUCU KURALLARI**
+
+**1. Saygı ve hoşgörü**
+Sunucumuzda bulunan her üyenin birbirine karşı saygılı ve anlayışlı davranması beklenmektedir. Hiçbir üye, başka bir üyeyi küçük düşüremez, aşağılayamaz, hedef gösteremez veya rahatsız edici davranışlarda bulunamaz. Herkesin düşüncelerine ve kişisel sınırlarına saygı gösterilmelidir.
+
+**2. Küfür ve hakaret**
+Sunucumuzda küfür, hakaret, ağır argo ve aşağılayıcı söylemler yasaktır. Şaka amacıyla dahi olsa başka bir üyeyi rahatsız edecek, küçük düşürecek veya huzurunu bozacak ifadeler kullanılmamalıdır. Arkadaş ortamında bulunmamız, saygı sınırlarının aşılabileceği anlamına gelmez.
+
+**3. Şantaj, tehdit ve RAT**
+Şantaj, tehdit, korkutma, kişisel bilgileri izinsiz paylaşma ve RAT (uzaktan erişim yoluyla bir kişinin cihazını kontrol etmeye yönelik zararlı yazılımlar) gibi davranışlar kesinlikle yasaktır. Bu tür davranışların hiçbir şekilde bahanesi veya istisnası kabul edilmeyecektir.
+
+**4. Üyeleri rahatsız etmek ve taciz**
+Herhangi bir üyeyi sürekli mesaj atarak rahatsız etmek, özel mesaj yoluyla baskı kurmak, huzurunu bozmak veya istemediği hâlde iletişim kurmaya zorlamak yasaktır. Bir üye rahatsız olduğunu belirttiğinde bu uyarıya saygı gösterilmesi zorunludur.
+
+**5. Kural ihlalleri ve uygulanacak cezalar**
+Yukarıdaki kuralları ihlal eden üyeler hakkında gerekli işlemler uygulanacaktır. Şantaj, RAT, tehdit ve ciddi ihlallerde doğrudan kalıcı yasaklama (permanent ban) uygulanabilir.
+
+**6. Genel sunucu düzeni**
+Sunucumuzun amacı insanları birbirine düşürmek değil, keyifli sohbetler gerçekleştirmektir. Bu sunucuya katılan herkes kuralları kabul etmiş sayılır.
+
+Herkese iyi eğlenceler, keyifli vakit geçirmeniz dileğiyle! ❤`;
+
+            const row = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId('kabul_et')
+                    .setLabel('✅ Kabul Ediyorum')
+                    .setStyle(ButtonStyle.Success)
+            );
+
+            await message.channel.send({ content: kurallarMetni, components: [row] });
+        } catch (err) {
+            console.error('Kurallar komut hatası:', err);
+        }
+        return;
     }
 
     // --- SES KANALINA GİRİŞ KOMUTU (.sesegir) ---
@@ -155,14 +183,22 @@ client.on('messageCreate', async message => {
         return;
     }
 
-    // --- MANUEL MUTE KOMUTU (.mute @kisi) ---
+    // --- 🔨 .mute KULLANICI KONTROLÜ VE 3 DAKİKA MUTE ---
     if (message.content.startsWith('.mute')) {
+        const corumRolu = message.guild.roles.cache.find(r => r.name.toLowerCase() === 'çorum');
+        if (!corumRolu || !message.member.roles.cache.has(corumRolu.id)) {
+            return message.reply('❌ Bu komutu sadece **Çorum** rolüne sahip olanlar kullanabilir!');
+        }
+
         const targetUser = message.mentions.members.first();
-        if (!targetUser) return message.reply('❌ Lütfen mutelenecek kişiyi etiketle! Örnek: `.mute @kullanici`');
+        if (!targetUser) {
+            return message.reply('❌ Mutelemek için bir kullanıcı ismi girin! Örnek: `.mute @kullanici`');
+        }
 
         try {
-            await targetUser.timeout(10 * 60 * 1000, 'Admin komutu ile mutelendi.');
-            await message.channel.send(`✅ ${targetUser} başarıyla 10 dakika süreyle susturuldu.`);
+            // Tam 3 dakika (180.000 milisaniye) mute atılıyor
+            await targetUser.timeout(3 * 60 * 1000, 'Çorum yetkilisi tarafından mutelendi.');
+            await message.channel.send(`✅ ${targetUser.user.username} başarılı şekilde susturuldu. 3 dakika.`);
         } catch (err) {
             console.error('Mute hatası:', err);
             message.reply('❌ Bu kullanıcıyı mutelemek için yetkim yetmiyor.');
@@ -170,14 +206,21 @@ client.on('messageCreate', async message => {
         return;
     }
 
-    // --- MANUEL UNMUTE KOMUTU (.unmute @kisi) ---
+    // --- 🔊 .unmute KULLANICI KONTROLÜ ---
     if (message.content.startsWith('.unmute')) {
+        const corumRolu = message.guild.roles.cache.find(r => r.name.toLowerCase() === 'çorum');
+        if (!corumRolu || !message.member.roles.cache.has(corumRolu.id)) {
+            return message.reply('❌ Bu komutu sadece **Çorum** rolüne sahip olanlar kullanabilir!');
+        }
+
         const targetUser = message.mentions.members.first();
-        if (!targetUser) return message.reply('❌ Lütfen susturması kaldırılacak kişiyi etiketle! Örnek: `.unmute @kullanici`');
+        if (!targetUser) {
+            return message.reply('❌ Susturması kaldırılacak bir kullanıcı ismi girin! Örnek: `.unmute @kullanici`');
+        }
 
         try {
             await targetUser.timeout(null, 'Unmute komutu ile açıldı.');
-            await message.channel.send(`✅ ${targetUser} adlı kullanıcının susturması kaldırıldı!`);
+            await message.channel.send(`✅ ${targetUser.user.username} adlı kullanıcının susturması kaldırıldı!`);
         } catch (err) {
             console.error('Unmute hatası:', err);
             message.reply('❌ Susturmayı kaldıramadım.');
@@ -185,10 +228,9 @@ client.on('messageCreate', async message => {
         return;
     }
 
-    // --- NUKE SİSTEMİ (.nuke) - SADECE "çorum" ROLÜ OLANLAR KULLANABİLİR ---
+    // --- 💣 NUKE SİSTEMİ (.nuke) - SADECE "çorum" ROLÜ ---
     if (message.content.startsWith('.nuke')) {
         const corumRolu = message.guild.roles.cache.find(r => r.name.toLowerCase() === 'çorum');
-        
         if (!corumRolu || !message.member.roles.cache.has(corumRolu.id)) {
             return message.reply('❌ Bu komutu sadece **Çorum** rolüne sahip yetkililer kullanabilir!');
         }

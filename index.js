@@ -20,13 +20,15 @@ const client = new Client({
     ]
 });
 
-// Genişletilmiş küfür listesi
+// Genişletilmiş ve özel küfür/argo/sayısal bypass listesi
 const blacklist = [
-    'sikeyim', 'sikim', 'skem', 'sikem', 
-    'oç', 'orospu', 'orospu evladı', 'orosph çocuğu', 
-    'ibne', 'ibine', 'piç', 'pezevenk', 'pzvnk', 
-    'yarrak', 'yrrm', 'yrm', 'yrk', 'yarak', 'yark', 
-    'or', 'oe', 'oçoe', 'porno', 'seks', 'sik', 'parçalarım'
+    'sikeyim', 'sikim', 'skem', 'sikem', 's1key1m', 's3k1m', 'sıkm',
+    'oç', 'orospu', 'orospu evladı', 'orosph çocuğu', 'oc', '0ç',
+    'ibne', 'ibine', '1bne', 'piç', 'p1ç', 'pezevenk', 'pzvnk', 
+    'yarrak', 'yrrm', 'yrm', 'yrk', 'yarak', 'yark', 'y4rr4k',
+    'or', 'oe', 'oçoe', 'porno', 'seks', 's3ks', 'sik', 'parçalarım',
+    'aminakoydugum', 'amonakoydugum', 'amcikinaqoyim', 'aminakoyim',
+    'anani', 'anasi', 'ananin', '4n4n1', '4n4sı'
 ];
 
 const spamKontrol = new Map();
@@ -40,7 +42,6 @@ client.once('ready', () => {
 // --- YENİ ÜYE KATILIMI & FAKE HESAP KORUMASI ---
 client.on('guildMemberAdd', async member => {
     try {
-        // Hesap açılış tarihi kontrolü (Örn: 3 günden yeni açılmış hesaplar şüphelidir)
         const hesapYasiMS = Date.now() - member.user.createdTimestamp;
         const ucGunMS = 3 * 24 * 60 * 60 * 1000;
 
@@ -49,7 +50,6 @@ client.on('guildMemberAdd', async member => {
             if (logChannel) {
                 await logChannel.send(`⚠️ **Şüpheli (Yeni) Hesap Yakalandı!**\n👤 **Üye:** ${member} (${member.user.tag})\n📅 **Hesap Kuruluş:** <t:${Math.floor(member.user.createdTimestamp / 1000)}:R>`);
             }
-            // İstersen burada otomatik kickleyebilirsin ama şimdilik sadece logluyor ve uyarıyor.
         }
 
         const kurallarKanal = member.guild.channels.cache.find(c => c.name === 'kurallar');
@@ -99,7 +99,6 @@ client.on('messageCreate', async message => {
     // --- 1. LİNK / REKLAM / PHISHING KORUMASI ---
     const linkKumesi = /(https?:\/\/|discord\.gg|discord\.com\/invite)/i;
     if (linkKumesi.test(message.content)) {
-        // Eğer mesajı atan kişide nuke✅ veya chatyt✅ rolü yoksa linki sil
         const yetkiliMi = message.member.permissions.has(PermissionsBitField.Flags.Administrator) ||
                          message.member.roles.cache.some(r => ['nuke✅', 'chatyt✅', 'çorum'].includes(r.name));
         
@@ -164,14 +163,39 @@ client.on('messageCreate', async message => {
         return;
     }
 
-    // --- 4. GELİŞMİŞ BYPASS Korumalı KÜFÜR FİLTRESİ ---
-    // Harf aralarındaki nokta, yıldız, boşluk ve tireleri temizleyerek orijinal küfrü yakalar
-    let temizMesaj = message.content.toLowerCase()
+    // --- 4. ULTRA GELİŞMİŞ SAYISAL & HARF BYPASS KORUMALI KÜFÜR FİLTRESİ ---
+    let hamMesaj = message.content.toLowerCase();
+    
+    // 1337 / Sayısal harf taklitlerini normal harflere çevir
+    hamMesaj = hamMesaj
+        .replace(/4/g, 'a')
+        .replace(/3/g, 'e')
+        .replace(/1/g, 'i')
+        .replace(/0/g, 'o')
+        .replace(/5/g, 's')
+        .replace(/7/g, 't')
+        .replace(/@/g, 'a');
+
+    // Noktalama işaretlerini, boşlukları veözel karakterleri yok et
+    let temizMesaj = hamMesaj
         .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, "")
-        .replace(/\s+/g, "");
+        .replace(/\s+/g, "")
+        .replace(/ç/g, 'c')
+        .replace(/ğ/g, 'g')
+        .replace(/ı/g, 'i')
+        .replace(/ö/g, 'o')
+        .replace(/ş/g, 's')
+        .replace(/ü/g, 'u');
 
     let isProfane = blacklist.some(yasakli => {
-        let duzYasakli = yasakli.replace(/\s+/g, "");
+        let duzYasakli = yasakli.toLowerCase()
+            .replace(/\s+/g, "")
+            .replace(/ç/g, 'c')
+            .replace(/ğ/g, 'g')
+            .replace(/ı/g, 'i')
+            .replace(/ö/g, 'o')
+            .replace(/ş/g, 's')
+            .replace(/ü/g, 'u');
         return temizMesaj.includes(duzYasakli);
     });
 
@@ -180,7 +204,7 @@ client.on('messageCreate', async message => {
             await message.delete();
             const logChannel = message.guild.channels.cache.find(c => c.name === 'log');
             if (logChannel) {
-                await logChannel.send(`⚠️ **Bypass Küfür Yakalandı!**\n👤 **Üye:** ${message.author} (${message.author.tag})\n📁 **Kanal:** ${message.channel}\n💬 **Orijinal Mesaj:** \`${message.content}\``);
+                await logChannel.send(`⚠️ **Bypass / Sayısal Küfür Yakalandı!**\n👤 **Üye:** ${message.author} (${message.author.tag})\n📁 **Kanal:** ${message.channel}\n💬 **Orijinal Mesaj:** \`${message.content}\``);
             } else {
                 await message.channel.send(`${message.author}, küfür etmek yasak!`);
             }

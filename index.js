@@ -41,24 +41,27 @@ client.on('messageCreate', async message => {
     }
 
     // --- SES KANALINA GİRİŞ KOMUTU (.sesegir) ---
-    // Artık komutu yazan kişinin bağlı olduğu ses kanalına direkt girer!
     if (message.content.startsWith('.sesegir')) {
         try {
-            const sesKanalimiz = message.member.voice.channel;
+            // "BİZ ÇORUMLUYUZ" kategorisi altındaki "SES KASIYORUZ" kanalını bulur
+            const sesKanalimiz = message.guild.channels.cache.find(c => 
+                c.name === 'SES KASIYORUZ' && 
+                c.type === ChannelType.GuildVoice
+            );
             
             if (!sesKanalimiz) {
-                return message.reply('❌ Önce bir ses kanalına girmelisin kanka, yoksa nereye gireceğini bilemem!');
+                return message.reply('❌ Sunucuda **SES KASIYORUZ** adında bir ses kanalı bulamadım!');
             }
 
             joinVoiceChannel({
                 channelId: sesKanalimiz.id,
                 guildId: message.guild.id,
                 adapterCreator: message.guild.voiceAdapterCreator,
-                selfMute: true,  // Kendini susturur
+                selfMute: true,  // Kendini muteler
                 selfDeaf: false
             });
 
-            await message.channel.send(`✅ **${sesKanalimiz.name}** kanalına giriş yapıldı ve kendim mutelendim!`);
+            await message.channel.send('Dediğiniz sese giriş yaptım.');
         } catch (err) {
             console.error('Ses kanalına girme hatası:', err);
             message.reply('❌ Ses kanalına bağlanırken bir hata oluştu: ' + err.message);

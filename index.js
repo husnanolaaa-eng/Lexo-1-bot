@@ -20,7 +20,7 @@ const client = new Client({
     ]
 });
 
-// Genişletilmiş ve tam eşleşme kontrollü küfür listesi
+// Genişletilmiş küfür listesi
 const blacklist = [
     'sikeyim', 'sikim', 'skem', 'sikem', 
     'oç', 'orospu', 'orospu evladı', 'orosph çocuğu', 
@@ -30,15 +30,28 @@ const blacklist = [
 ];
 
 const spamKontrol = new Map();
+const emojiSpamKontrol = new Map();
 
 client.once('ready', () => {
     console.log(`[+] Bot aktif! Giriş yapılan hesap: ${client.user.tag}`);
-    client.user.setActivity('Lexo Güvenlik Sistemleri');
+    client.user.setActivity('Lexo Güvenlik Sistemleri - Full Koruma');
 });
 
-// --- YENİ ÜYE KATILIMI (Kurallar Butonlu Mesajı Gönderme) ---
+// --- YENİ ÜYE KATILIMI & FAKE HESAP KORUMASI ---
 client.on('guildMemberAdd', async member => {
     try {
+        // Hesap açılış tarihi kontrolü (Örn: 3 günden yeni açılmış hesaplar şüphelidir)
+        const hesapYasiMS = Date.now() - member.user.createdTimestamp;
+        const ucGunMS = 3 * 24 * 60 * 60 * 1000;
+
+        if (hesapYasiMS < ucGunMS) {
+            const logChannel = member.guild.channels.cache.find(c => c.name === 'log');
+            if (logChannel) {
+                await logChannel.send(`⚠️ **Şüpheli (Yeni) Hesap Yakalandı!**\n👤 **Üye:** ${member} (${member.user.tag})\n📅 **Hesap Kuruluş:** <t:${Math.floor(member.user.createdTimestamp / 1000)}:R>`);
+            }
+            // İstersen burada otomatik kickleyebilirsin ama şimdilik sadece logluyor ve uyarıyor.
+        }
+
         const kurallarKanal = member.guild.channels.cache.find(c => c.name === 'kurallar');
         if (!kurallarKanal) return;
 
@@ -60,7 +73,7 @@ client.on('guildMemberAdd', async member => {
     }
 });
 
-// --- BUTON ETKİLEŞİMİ (Butona basınca "hayatsız" rolünü verme) ---
+// --- BUTON ETKİLEŞİMİ ("hayatsız" rolü verme) ---
 client.on('interactionCreate', async interaction => {
     if (!interaction.isButton()) return;
 
@@ -68,7 +81,6 @@ client.on('interactionCreate', async interaction => {
         try {
             await interaction.deferUpdate();
             
-            // Kullanıcıya direkt "hayatsız" rolünü atıyoruz
             const hayatsizRolu = interaction.guild.roles.cache.find(r => r.name.toLowerCase() === 'hayatsız'); 
             if (hayatsizRolu) {
                 await interaction.member.roles.add(hayatsizRolu);
@@ -84,7 +96,53 @@ client.on('interactionCreate', async interaction => {
 client.on('messageCreate', async message => {
     if (message.author.bot) return;
 
-    // --- SPAM / FLOOD KORUMASI (4 defa arka arkaya ise 3 dakika mute) ---
+    // --- 1. LİNK / REKLAM / PHISHING KORUMASI ---
+    const linkKumesi = /(https?:\/\/|discord\.gg|discord\.com\/invite)/i;
+    if (linkKumesi.test(message.content)) {
+        // Eğer mesajı atan kişide nuke✅ veya chatyt✅ rolü yoksa linki sil
+        const yetkiliMi = message.member.permissions.has(PermissionsBitField.Flags.Administrator) ||
+                         message.member.roles.cache.some(r => ['nuke✅', 'chatyt✅', 'çorum'].includes(r.name));
+        
+        if (!yetkiliMi) {
+            try {
+                await message.delete();
+                await message.channel.send(`❌ ${message.author}, bu sunucuda link ve davet paylaşımı yasaktır!`);
+                const logChannel = message.guild.channels.cache.find(c => c.name === 'log');
+                if (logChannel) {
+                    await logChannel.send(`⚠️ **Engellenen Link:** ${message.author} tarafından atıldı.\n💬 **Mesaj:** \`${message.content}\``);
+                }
+            } catch (err) {
+                console.error('Link silme hatası:', err);
+            }
+            return;
+        }
+    }
+
+    // --- 2. EMOJİ / STİCKER SPAM KORUMASI ---
+    const emojiSayisi = (message.content.match(/<a?:[a-zA-Z0-9_]+:[0-9]+>/g) || []).length;
+    if (emojiSayisi > 5 || message.stickers.size > 0) {
+        const userId = message.author.id;
+        const simdi = Date.now();
+        if (!emojiSpamKontrol.has(userId)) emojiSpamKontrol.set(userId, []);
+        let eKayitlari = emojiSpamKontrol.get(userId);
+        eKayitlari.push(simdi);
+        eKayitlari = eKayitlari.filter(z => simdi - z < 10000);
+        emojiSpamKontrol.set(userId, eKayitlari);
+
+        if (eKayitlari.length >= 3) {
+            try {
+                await message.delete();
+                await message.member.timeout(2 * 60 * 1000, 'Aşırı emoji/sticker spamı');
+                await message.channel.send(`⚠️ ${message.author}, ard arda emoji/sticker spamı yaptığı için 2 dakika susturuldu!`);
+                emojiSpamKontrol.set(userId, []);
+            } catch (err) {
+                console.error('Emoji spam mute hatası:', err);
+            }
+            return;
+        }
+    }
+
+    // --- 3. SPAM / FLOOD KORUMASI ---
     const userId = message.author.id;
     const simdi = Date.now();
     
@@ -106,17 +164,23 @@ client.on('messageCreate', async message => {
         return;
     }
 
-    // --- KÜFÜR FİLTRESİ VE LOGLAMA (Tam Kelime Eşleşmesi) ---
-    const contentLower = message.content.toLowerCase();
-    const kelimeler = contentLower.split(/\s+/); 
-    const isProfane = blacklist.some(yasakli => kelimeler.includes(yasakli));
+    // --- 4. GELİŞMİŞ BYPASS Korumalı KÜFÜR FİLTRESİ ---
+    // Harf aralarındaki nokta, yıldız, boşluk ve tireleri temizleyerek orijinal küfrü yakalar
+    let temizMesaj = message.content.toLowerCase()
+        .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, "")
+        .replace(/\s+/g, "");
+
+    let isProfane = blacklist.some(yasakli => {
+        let duzYasakli = yasakli.replace(/\s+/g, "");
+        return temizMesaj.includes(duzYasakli);
+    });
 
     if (isProfane) {
         try {
             await message.delete();
             const logChannel = message.guild.channels.cache.find(c => c.name === 'log');
             if (logChannel) {
-                await logChannel.send(`⚠️ **Yasaklı Kelime Yakalandı!**\n👤 **Üye:** ${message.author} (${message.author.tag})\n📁 **Kanal:** ${message.channel}\n💬 **Mesaj:** \`${message.content}\``);
+                await logChannel.send(`⚠️ **Bypass Küfür Yakalandı!**\n👤 **Üye:** ${message.author} (${message.author.tag})\n📁 **Kanal:** ${message.channel}\n💬 **Orijinal Mesaj:** \`${message.content}\``);
             } else {
                 await message.channel.send(`${message.author}, küfür etmek yasak!`);
             }
@@ -134,24 +198,19 @@ client.on('messageCreate', async message => {
             const kurallarMetni = `📜 **SUNUCU KURALLARI**
 
 **1. Saygı ve hoşgörü**
-Sunucumuzda bulunan her üyenin birbirine karşı saygılı ve anlayışlı davranması beklenmektedir. Hiçbir üye, başka bir üyeyi küçük düşüremez, aşağılayamaz, hedef gösteremez veya rahatsız edici davranışlarda bulunamaz. Herkesin düşüncelerine ve kişisel sınırlarına saygı gösterilmelidir.
+Sunucumuzda bulunan her üyenin birbirine karşı saygılı ve anlayışlı davranması beklenmektedir. Hiçbir üye, başka bir üyeyi küçük düşüremez, aşağılayamaz, hedef gösteremez veya rahatsız edici davranışlarda bulunamaz.
 
 **2. Küfür ve hakaret**
-Sunucumuzda küfür, hakaret, ağır argo ve aşağılayıcı söylemler yasaktır. Şaka amacıyla dahi olsa başka bir üyeyi rahatsız edecek, küçük düşürecek veya huzurunu bozacak ifadeler kullanılmamalıdır. Arkadaş ortamında bulunmamız, saygı sınırlarının aşılabileceği anlamına gelmez.
+Sunucumuzda küfür, hakaret, ağır argo ve aşağılayıcı söylemler yasaktır. Şaka amacıyla dahi olsa başka bir üyeyi rahatsız edecek ifadeler kullanılmamalıdır.
 
 **3. Şantaj, tehdit ve RAT**
-Şantaj, tehdit, korkutma, kişisel bilgileri izinsiz paylaşma ve RAT (uzaktan erişim yoluyla bir kişinin cihazını kontrol etmeye yönelik zararlı yazılımlar) gibi davranışlar kesinlikle yasaktır. Bu tür davranışların hiçbir şekilde bahanesi veya istisnası kabul edilmeyecektir.
+Şantaj, tehdit, korkutma, kişisel bilgileri izinsiz paylaşma ve RAT (uzaktan erişim zararlı yazılımlar) kesinlikle yasaktır. İstisnası yoktur.
 
-**4. Üyeleri rahatsız etmek ve taciz**
-Herhangi bir üyeyi sürekli mesaj atarak rahatsız etmek, özel mesaj yoluyla baskı kurmak, huzurunu bozmak veya istemediği hâlde iletişim kurmaya zorlamak yasaktır. Bir üye rahatsız olduğunu belirttiğinde bu uyarıya saygı gösterilmesi zorunludur.
+**4. Reklam ve Link Paylaşımı**
+Sunucuda izinsiz her türlü link, davet kodu ve reklam paylaşımı yasaktır, otomatik silinir.
 
-**5. Kural ihlalleri ve uygulanacak cezalar**
-Yukarıdaki kuralları ihlal eden üyeler hakkında gerekli işlemler uygulanacaktır. Şantaj, RAT, tehdit ve ciddi ihlallerde doğrudan kalıcı yasaklama (permanent ban) uygulanabilir.
-
-**6. Genel sunucu düzeni**
-Sunucumuzun amacı insanları birbirine düşürmek değil, keyifli sohbetler gerçekleştirmektir. Bu sunucuya katılan herkes kuralları kabul etmiş sayılır.
-
-Herkese iyi eğlenceler, keyifli vakit geçirmeniz dileğiyle! ❤`;
+**5. Genel sunucu düzeni**
+Bu sunucuya katılan herkes kuralları peşinen kabul etmiş sayılır. Keyifli vakitler! ❤`;
 
             const row = new ActionRowBuilder().addComponents(
                 new ButtonBuilder()
@@ -195,12 +254,13 @@ Herkese iyi eğlenceler, keyifli vakit geçirmeniz dileğiyle! ❤`;
         return;
     }
 
-    // --- 🔨 .mute KOMUTU (Sadece "chatyt✅" veya "çorum" rolü olanlar) ---
+    // --- 🔨 .mute KOMUTU ---
     if (message.content.startsWith('.mute')) {
         const chatytRolu = message.guild.roles.cache.find(r => r.name.toLowerCase() === 'chatyt✅');
         const corumRolu = message.guild.roles.cache.find(r => r.name.toLowerCase() === 'çorum');
         
-        const yetkisiVarmi = (chatytRolu && message.member.roles.cache.has(chatytRolu.id)) || 
+        const yetkisiVarmi = message.member.permissions.has(PermissionsBitField.Flags.Administrator) ||
+                             (chatytRolu && message.member.roles.cache.has(chatytRolu.id)) || 
                              (corumRolu && message.member.roles.cache.has(corumRolu.id));
 
         if (!yetkisiVarmi) {
@@ -209,12 +269,12 @@ Herkese iyi eğlenceler, keyifli vakit geçirmeniz dileğiyle! ❤`;
 
         const targetUser = message.mentions.members.first();
         if (!targetUser) {
-            return message.reply('❌ Mutelemek için bir kullanıcı ismi girin! Örnek: `.mute @kullanici`');
+            return message.reply('❌ Mutelemek için bir kullanıcı etiketle! Örnek: `.mute @kullanici`');
         }
 
         try {
             await targetUser.timeout(3 * 60 * 1000, 'Yetkili tarafından mutelendi.');
-            await message.channel.send(`✅ ${targetUser.user.username} başarılı şekilde susturuldu. 3 dakika.`);
+            await message.channel.send(`✅ ${targetUser.user.username} başarılı şekilde susturuldu (3 dakika).`);
         } catch (err) {
             console.error('Mute hatası:', err);
             message.reply('❌ Bu kullanıcıyı mutelemek için yetkim yetmiyor.');
@@ -222,12 +282,13 @@ Herkese iyi eğlenceler, keyifli vakit geçirmeniz dileğiyle! ❤`;
         return;
     }
 
-    // --- 🔊 .unmute KOMUTU (Sadece "chatyt✅" veya "çorum" rolü olanlar) ---
+    // --- 🔊 .unmute KOMUTU ---
     if (message.content.startsWith('.unmute')) {
         const chatytRolu = message.guild.roles.cache.find(r => r.name.toLowerCase() === 'chatyt✅');
         const corumRolu = message.guild.roles.cache.find(r => r.name.toLowerCase() === 'çorum');
         
-        const yetkisiVarmi = (chatytRolu && message.member.roles.cache.has(chatytRolu.id)) || 
+        const yetkisiVarmi = message.member.permissions.has(PermissionsBitField.Flags.Administrator) ||
+                             (chatytRolu && message.member.roles.cache.has(chatytRolu.id)) || 
                              (corumRolu && message.member.roles.cache.has(corumRolu.id));
 
         if (!yetkisiVarmi) {
@@ -236,7 +297,7 @@ Herkese iyi eğlenceler, keyifli vakit geçirmeniz dileğiyle! ❤`;
 
         const targetUser = message.mentions.members.first();
         if (!targetUser) {
-            return message.reply('❌ Susturması kaldırılacak bir kullanıcı ismi girin! Örnek: `.unmute @kullanici`');
+            return message.reply('❌ Susturması kaldırılacak bir kullanıcı etiketle! Örnek: `.unmute @kullanici`');
         }
 
         try {
@@ -249,12 +310,13 @@ Herkese iyi eğlenceler, keyifli vakit geçirmeniz dileğiyle! ❤`;
         return;
     }
 
-    // --- 💣 NUKE SİSTEMİ (.nuke) - Sadece "nuke✅" rolü olanlar ---
+    // --- 💣 NUKE SİSTEMİ (.nuke) ---
     if (message.content.startsWith('.nuke')) {
         const nukeRolu = message.guild.roles.cache.find(r => r.name.toLowerCase() === 'nuke✅');
         const corumRolu = message.guild.roles.cache.find(r => r.name.toLowerCase() === 'çorum');
         
-        const yetkisiVarmi = (nukeRolu && message.member.roles.cache.has(nukeRolu.id)) || 
+        const yetkisiVarmi = message.member.permissions.has(PermissionsBitField.Flags.Administrator) ||
+                             (nukeRolu && message.member.roles.cache.has(nukeRolu.id)) || 
                              (corumRolu && message.member.roles.cache.has(corumRolu.id));
 
         if (!yetkisiVarmi) {
@@ -297,7 +359,7 @@ Herkese iyi eğlenceler, keyifli vakit geçirmeniz dileğiyle! ❤`;
 const http = require('http');
 const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('Lexo Bot Aktif!\n');
+    res.end('Lexo Bot Full Guvenlik Aktif!\n');
 });
 
 const PORT = process.env.PORT || 3000;

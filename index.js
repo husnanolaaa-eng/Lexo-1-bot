@@ -46,30 +46,33 @@ client.once('ready', () => {
     }
 });
 
-client.on('messageCreate', async message => {
-    if (message.author.bot) return;
+// Statbot ve diğer bot mesajlarını anında yakalamak için son atılan mesajları takip havuzu
+let sonMesajlar = new Map();
 
-    // --- 1. KANAL DIŞI "s?u" ENGELLEYİCİ VE STATBOT TEMİZLİĞİ ---
-    // Büyük/küçük harf duyarsız kontrol (s?u veya S?u)
-    if (message.content.toLowerCase().startsWith('s?u')) {
+client.on('messageCreate', async message => {
+    // 1. Eğer mesaj bir bot'a aitse ve yetkisiz kanalda Statbot cevabı geldiyse direkt sil
+    if (message.author.bot) {
+        // Eğer mesaj bot-komut dışındaki bir kanaldatıldıysa ve Statbot (veya başka bot) cevap verdiyse
+        if (message.channel.name !== 'bot-komut') {
+            // Son 3 saniye içinde bu kanalda s?u yazan biri var mı kontrol et
+            const sonYazan = sonMesajlar.get(message.channel.id);
+            if (sonYazan && (Date.now() - sonYazan.zaman < 4000)) {
+                await message.delete().catch(() => {});
+            }
+        }
+        return;
+    }
+
+    // --- KANAL DIŞI "s?u" ENGELLEYİCİ ---
+    const mesajIcerigi = message.content.toLowerCase();
+    if (mesajIcerigi.startsWith('s?u') || mesajIcerigi.startsWith('S?u')) {
         if (message.channel.name !== 'bot-komut') {
             try {
-                const channel = message.channel;
-                const authorId = message.author.id;
+                // Kanal ID'sini ve zamanını kaydet ki bot cevap verince silebilelim
+                sonMesajlar.set(message.channel.id, { userId: message.author.id, zaman: Date.now() });
 
-                // Kullanıcının mesajını anında sil
                 await message.delete().catch(() => {});
-
-                // Statbot'un vereceği yanıtı yakalamak için 3 saniyelik dinleyici
-                const filterStat = m => m.author.bot && (m.content.includes(authorId) || m.embeds.length > 0);
-                const collectorStat = channel.createMessageCollector({ filter: filterStat, time: 3000, max: 1 });
-
-                collectorStat.on('collect', async statMsg => {
-                    await statMsg.delete().catch(() => {});
-                });
-
-                // Kullanıcıyı uyar
-                await channel.send(`${message.author}, Lütfen Bot-Komuta gidiniz.`);
+                await message.channel.send(`${message.author}, Lütfen Bot-Komuta gidiniz.`);
             } catch (err) {
                 console.error('s?u engelleme hatası:', err);
             }
@@ -77,12 +80,12 @@ client.on('messageCreate', async message => {
         }
     }
 
-    // --- 2. ÖZEL ETİKET YANITI (@Lexocan 1) ---
+    // --- ÖZEL ETİKET YANITI (@Lexocan 1) ---
     if (message.mentions.has(client.user) && message.content.includes('1')) {
         return message.reply('Buyrun?');
     }
 
-    // --- 3. KÜFÜR FİLTRESİ ---
+    // --- KÜFÜR FİLTRESİ ---
     const contentLower = message.content.toLowerCase();
     const isProfane = blacklist.some(word => contentLower.includes(word));
 
@@ -99,7 +102,7 @@ client.on('messageCreate', async message => {
         return; 
     }
 
-    // --- 4. UNMUTE KOMUTU (.unmute) ---
+    // --- UNMUTE KOMUTU (.unmute) ---
     if (message.content.startsWith('.unmute')) {
         const targetUser = message.mentions.members.first();
 
@@ -124,7 +127,7 @@ client.on('messageCreate', async message => {
         }
     }
 
-    // --- 5. KURALLAR KOMUTU (.kurallar) ---
+    // --- KURALLAR KOMUTU (.kurallar) ---
     if (message.content.startsWith('.kurallar')) {
         try {
             await message.delete().catch(() => {});
@@ -138,7 +141,7 @@ client.on('messageCreate', async message => {
         }
     }
 
-    // --- 6. NUKE SİSTEMİ (.nuke) ---
+    // --- NUKE SİSTEMİ (.nuke) ---
     if (message.content.startsWith('.nuke')) {
         const komutuYazan = message.author;
         const row = new ActionRowBuilder().addComponents(

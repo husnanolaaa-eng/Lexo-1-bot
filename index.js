@@ -166,7 +166,6 @@ client.on('messageCreate', async message => {
     // --- 4. ULTRA GELİŞMİŞ SAYISAL & HARF BYPASS KORUMALI KÜFÜR FİLTRESİ ---
     let hamMesaj = message.content.toLowerCase();
     
-    // 1337 / Sayısal harf taklitlerini normal harflere çevir
     hamMesaj = hamMesaj
         .replace(/4/g, 'a')
         .replace(/3/g, 'e')
@@ -176,7 +175,6 @@ client.on('messageCreate', async message => {
         .replace(/7/g, 't')
         .replace(/@/g, 'a');
 
-    // Noktalama işaretlerini, boşlukları veözel karakterleri yok et
     let temizMesaj = hamMesaj
         .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, "")
         .replace(/\s+/g, "")
@@ -212,6 +210,39 @@ client.on('messageCreate', async message => {
             console.error('Küfür filtreleme hatası:', err);
         }
         return; 
+    }
+
+    // --- 📜 .rolbilgi KOMUTU ---
+    if (message.content.startsWith('.rolbilgi')) {
+        try {
+            await message.delete().catch(() => {});
+
+            const rolBilgiMetni = `🎖️ **AKTİF ÜYE ÖDÜLLERİ**
+
+Sunucumuzda 1.000 mesaj gönderen üyelere **nuke✅**, 2.000 mesaj gönderen üyelere ise **chatyt✅** rolü verilecektir. (Şimdilik.)
+
+🔇 **chatyt✅**
+Bu role sahip üyeler, diğer üyeleri etiketleyerek susturma yetkisine sahiptir.
+* Susturmak için: \`.mute (kullanıcı)\`
+* Susturmayı kaldırmak için: \`.unmute (kullanıcı)\`
+Susturma işlemi en az 3 dakika sürmelidir. Kişisel nedenlerle veya keyfî olarak susturma işlemi yapmak yasaktır. Yetkiler, sunucu kuralları doğrultusunda kullanılmalıdır. Aksi takdirde yetkiniz geri alınacaktır.
+
+💥 **nuke✅**
+Bu role sahip üyeler, yetkili oldukları kanallardaki mesajları silebilir.
+Bunun için mesajları silmek istediğiniz kanala girmeniz ve sohbet kısmına \`.nuke\` yazmanız yeterlidir.
+Ancak kanala art arda Nuke işlemi uygulayarak sohbet düzenini bozmak yasaktır. Bu yetkinin gereksiz kullanımında rolünüz geri alınacaktır. Nuke işlemini yalnızca gerekli durumlarda ve yönetim kurallarına uygun şekilde kullanmanız beklenmektedir.
+
+*Unutmayın: Bu roller bir ayrıcalıktır. Yetkilerin kötüye kullanılması durumunda geri alınabilir.*`;
+
+            const embed = new EmbedBuilder()
+                .setColor('#00ffcc')
+                .setDescription(rolBilgiMetni);
+
+            await message.channel.send({ embeds: [embed] });
+        } catch (err) {
+            console.error('Rolbilgi komut hatası:', err);
+        }
+        return;
     }
 
     // --- 📜 !KURALLAR KOMUTU ---

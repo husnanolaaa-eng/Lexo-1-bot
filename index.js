@@ -40,28 +40,38 @@ client.on('messageCreate', async message => {
         return;
     }
 
-    // --- SES KANALINA GİRİŞ KOMUTU (.sesegir) ---
+    // --- SES KANALINA GİRİŞ KOMUTU (.sesegir #SES KASIYORUZ) ---
     if (message.content.startsWith('.sesegir')) {
         try {
-            // "BİZ ÇORUMLUYUZ" kategorisi altındaki "SES KASIYORUZ" kanalını bulur
-            const sesKanalimiz = message.guild.channels.cache.find(c => 
-                c.name === 'SES KASIYORUZ' && 
-                c.type === ChannelType.GuildVoice
-            );
-            
-            if (!sesKanalimiz) {
-                return message.reply('❌ Sunucuda **SES KASIYORUZ** adında bir ses kanalı bulamadım!');
+            // 1. Önce mesajda etiketlenen bir kanal var mı ona bakar (Örn: #ses-kasiyoruz)
+            let hedefKanal = message.mentions.channels.first();
+
+            // 2. Eğer etiketlenmediyse, yazının devamındaki ismi arar (Örn: .sesegir SES KASIYORUZ)
+            if (!hedefKanal) {
+                const arguman = message.content.slice('.sesegir'.length).trim();
+                if (arguman) {
+                    hedefKanal = message.guild.channels.cache.find(c => 
+                        c.name.toLowerCase() === arguman.toLowerCase() && 
+                        c.type === ChannelType.GuildVoice
+                    );
+                }
             }
 
+            // 3. Hiçbiri bulunamadıysa veya yazılanda ses kanalı değilse hata ver
+            if (!hedefKanal || hedefKanal.type !== ChannelType.GuildVoice) {
+                return message.reply('❌ Lütfen geçerli bir ses kanalı belirt veya etiketle! Örnek: `.sesegir SES KASIYORUZ`');
+            }
+
+            // Sese bağlan
             joinVoiceChannel({
-                channelId: sesKanalimiz.id,
+                channelId: hedefKanal.id,
                 guildId: message.guild.id,
                 adapterCreator: message.guild.voiceAdapterCreator,
                 selfMute: true,  // Kendini muteler
                 selfDeaf: false
             });
 
-            await message.channel.send('Dediğiniz sese giriş yaptım.');
+            await message.channel.send('Başarılı şekilde sese girildi.');
         } catch (err) {
             console.error('Ses kanalına girme hatası:', err);
             message.reply('❌ Ses kanalına bağlanırken bir hata oluştu: ' + err.message);

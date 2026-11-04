@@ -40,26 +40,24 @@ client.on('messageCreate', async message => {
         return;
     }
 
-    // --- SES KANALINA GİRİŞ KOMUTU (.sesegir #SES KASIYORUZ) ---
+    // --- SES KANALINA GİRİŞ KOMUTU (.sesegir SES KASIYORUZ) ---
     if (message.content.startsWith('.sesegir')) {
         try {
-            // 1. Önce mesajda etiketlenen bir kanal var mı ona bakar (Örn: #ses-kasiyoruz)
-            let hedefKanal = message.mentions.channels.first();
+            // .sesegir komutundan sonra yazılan ismi al ve başındaki/sonundaki boşlukları temizle
+            const kanalAdi = message.content.slice('.sesegir'.length).trim();
 
-            // 2. Eğer etiketlenmediyse, yazının devamındaki ismi arar (Örn: .sesegir SES KASIYORUZ)
-            if (!hedefKanal) {
-                const arguman = message.content.slice('.sesegir'.length).trim();
-                if (arguman) {
-                    hedefKanal = message.guild.channels.cache.find(c => 
-                        c.name.toLowerCase() === arguman.toLowerCase() && 
-                        c.type === ChannelType.GuildVoice
-                    );
-                }
+            if (!kanalAdi) {
+                return message.reply('❌ Lütfen bir ses kanalının adını yaz! Örnek: `.sesegir SES KASIYORUZ`');
             }
 
-            // 3. Hiçbiri bulunamadıysa veya yazılanda ses kanalı değilse hata ver
-            if (!hedefKanal || hedefKanal.type !== ChannelType.GuildVoice) {
-                return message.reply('❌ Lütfen geçerli bir ses kanalı belirt veya etiketle! Örnek: `.sesegir SES KASIYORUZ`');
+            // Sunucudaki ses kanalları arasında ismi eşleşeni bul
+            const hedefKanal = message.guild.channels.cache.find(c => 
+                c.name.toLowerCase() === kanalAdi.toLowerCase() && 
+                c.type === ChannelType.GuildVoice
+            );
+
+            if (!hedefKanal) {
+                return message.reply(`❌ "${kanalAdi}" adında bir ses kanalı bulamadım kanka! İsmi doğru yazdığından emin ol.`);
             }
 
             // Sese bağlan

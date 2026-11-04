@@ -49,7 +49,6 @@ client.on('messageCreate', async message => {
                 return message.reply('❌ Lütfen ses kanalının adını yaz! Örnek: `.sesegir SES KASIYORUZ`');
             }
 
-            // Sunucudaki ses kanallarını konsola listeletelim ki eşleşip eşleşmediğini görebilelim
             const hedefKanal = message.guild.channels.cache.find(c => 
                 c.name.toLowerCase() === kanalAdi.toLowerCase() && 
                 c.type === ChannelType.GuildVoice
@@ -59,13 +58,11 @@ client.on('messageCreate', async message => {
                 return message.reply(`❌ "${kanalAdi}" adında bir ses kanalı bulamadım kanka!`);
             }
 
-            console.log(`[!] Ses bağlantısı kuruluyor: Kanal ID -> ${hedefKanal.id}, Guild ID -> ${message.guild.id}`);
-
             joinVoiceChannel({
                 channelId: hedefKanal.id,
                 guildId: message.guild.id,
                 adapterCreator: message.guild.voiceAdapterCreator,
-                selfMute: true,
+                selfMute: false,  // Yeşilin görünmesi için burayı false yaptık
                 selfDeaf: false
             });
 

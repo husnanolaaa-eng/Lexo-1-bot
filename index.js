@@ -20,7 +20,7 @@ const client = new Client({
     ]
 });
 
-// Genişletilmiş Küresel, Türkçe, İngilizce (fack/fak/fuk dahil), Arapça ve Irkçı/Ağır Hakaret Listesi
+// Genişletilmiş Küresel, Türkçe, İngilizce, Arapça ve Irkçı/Ağır Hakaret Listesi (Yanlış alarmlar temizlendi)
 const blacklist = [
     // Türkçe & Bypass Varyasyonları
     'sikeyim', 'sikim', 'skem', 'sikem', 's1key1m', 's3k1m', 'sıkm',
@@ -35,7 +35,7 @@ const blacklist = [
     'fuck', 'fucking', 'fucked', 'fucker', 'motherfucker', 'mf',
     'fack', 'fak', 'fuk', 'faak', 'fuuck', 'fck',
     'shit', 'shitty', 'bitch', 'asshole', 'bastard', 'cunt', 'dick', 
-    'pussy', 'cock', 'whore', 'slut', 'idiot', 'retard', 'stupu',
+    'pussy', 'cock', 'whore', 'slut', 'idiot', 'retard',
 
     // Irkçı ve Hassas Küfürler (N-word ve varyasyonları)
     'nigger', 'nigga', 'n1gg3r', 'n1gga', 'neger', 'negro', 'niggah',
@@ -102,7 +102,6 @@ client.on('interactionCreate', async interaction => {
             
             await interaction.followUp({ content: '✅ Kuralları kabul ettin, "hayatsız" rolü verildi ve sunucu kilidi açıldı!', ephemeral: true });
 
-            // Sohbet veya chat adındaki kanalı bulup hoş geldin mesajı atma
             const chatKanali = interaction.guild.channels.cache.find(c => c.name.toLowerCase() === 'chat' || c.name.toLowerCase() === 'sohbet' || c.name.toLowerCase() === 'genel');
             if (chatKanali) {
                 await chatKanali.send(`🎉 ${interaction.user} Hoşgeldin!`);

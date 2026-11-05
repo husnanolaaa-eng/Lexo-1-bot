@@ -20,7 +20,7 @@ const client = new Client({
     ]
 });
 
-// Genişletilmiş Küresel, Türkçe, İngilizce (fack/fak dahil), Arapça ve Irkçı/Ağır Hakaret Listesi
+// Genişletilmiş Küresel, Türkçe, İngilizce (fack/fak/fuk dahil), Arapça ve Irkçı/Ağır Hakaret Listesi
 const blacklist = [
     // Türkçe & Bypass Varyasyonları
     'sikeyim', 'sikim', 'skem', 'sikem', 's1key1m', 's3k1m', 'sıkm',
@@ -87,7 +87,7 @@ client.on('guildMemberAdd', async member => {
     }
 });
 
-// --- BUTON ETKİLEŞİMİ ("hayatsız" rolü verme) ---
+// --- BUTON ETKİLEŞİMİ ("hayatsız" rolü verme & chat kanalına karşılama) ---
 client.on('interactionCreate', async interaction => {
     if (!interaction.isButton()) return;
 
@@ -101,6 +101,12 @@ client.on('interactionCreate', async interaction => {
             }
             
             await interaction.followUp({ content: '✅ Kuralları kabul ettin, "hayatsız" rolü verildi ve sunucu kilidi açıldı!', ephemeral: true });
+
+            // Sohbet veya chat adındaki kanalı bulup hoş geldin mesajı atma
+            const chatKanali = interaction.guild.channels.cache.find(c => c.name.toLowerCase() === 'chat' || c.name.toLowerCase() === 'sohbet' || c.name.toLowerCase() === 'genel');
+            if (chatKanali) {
+                await chatKanali.send(`🎉 ${interaction.user} Hoşgeldin!`);
+            }
         } catch (err) {
             console.error('Kabul et buton hatası:', err);
         }
@@ -185,7 +191,6 @@ client.on('messageCreate', async message => {
     if (!komutMu) {
         let hamMesaj = message.content.toLowerCase();
         
-        // Evrensel sayısal/sembol taklitlerini harfe çevir
         hamMesaj = hamMesaj
             .replace(/4/g, 'a')
             .replace(/3/g, 'e')
@@ -199,7 +204,6 @@ client.on('messageCreate', async message => {
             .replace(/\$/g, 's')
             .replace(/!/g, 'i');
 
-        // Bütün noktalama işaretlerini, boşlukları ve yabancı karakterleri normalize et
         let temizMesaj = hamMesaj
             .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, "")
             .replace(/\s+/g, "")

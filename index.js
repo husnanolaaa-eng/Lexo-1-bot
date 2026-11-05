@@ -20,15 +20,29 @@ const client = new Client({
     ]
 });
 
-// Genişletilmiş ve özel küfür/argo/sayısal bypass listesi
+// Genişletilmiş Küresel, Türkçe, İngilizce (fack/fak dahil), Arapça ve Irkçı/Ağır Hakaret Listesi
 const blacklist = [
+    // Türkçe & Bypass Varyasyonları
     'sikeyim', 'sikim', 'skem', 'sikem', 's1key1m', 's3k1m', 'sıkm',
     'oç', 'orospu', 'orospu evladı', 'orosph çocuğu', 'oc', '0ç',
     'ibne', 'ibine', '1bne', 'piç', 'p1ç', 'pezevenk', 'pzvnk', 
     'yarrak', 'yrrm', 'yrm', 'yrk', 'yarak', 'yark', 'y4rr4k',
     'or', 'oe', 'oçoe', 'porno', 'seks', 's3ks', 'sik', 'parçalarım',
     'aminakoydugum', 'amonakoydugum', 'amcikinaqoyim', 'aminakoyim',
-    'anani', 'anasi', 'ananin', '4n4n1', '4n4sı'
+    'anani', 'anasi', 'ananin', '4n4n1', '4n4sı',
+
+    // İngilizce Küfürler & Fack/Fak/Fuk Varyasyonları
+    'fuck', 'fucking', 'fucked', 'fucker', 'motherfucker', 'mf',
+    'fack', 'fak', 'fuk', 'faak', 'fuuck', 'fck',
+    'shit', 'shitty', 'bitch', 'asshole', 'bastard', 'cunt', 'dick', 
+    'pussy', 'cock', 'whore', 'slut', 'idiot', 'retard', 'stupu',
+
+    // Irkçı ve Hassas Küfürler (N-word ve varyasyonları)
+    'nigger', 'nigga', 'n1gg3r', 'n1gga', 'neger', 'negro', 'niggah',
+
+    // Arapça & Diğer Dillerdeki Yaygın Küfür / Hakaretler
+    'sharmuta', 'sharmouta', 'kesh ummak', 'awad', 'kalb', 'hayawan',
+    'kos omak', 'kus omak', 'putain', 'merde', 'scheiße', 'arschloch'
 ];
 
 const spamKontrol = new Map();
@@ -36,7 +50,7 @@ const emojiSpamKontrol = new Map();
 
 client.once('ready', () => {
     console.log(`[+] Bot aktif! Giriş yapılan hesap: ${client.user.tag}`);
-    client.user.setActivity('Lexo Güvenlik Sistemleri - Full Koruma');
+    client.user.setActivity('Lexo Güvenlik Sistemleri - Uluslararası Koruma');
 });
 
 // --- YENİ ÜYE KATILIMI & FAKE HESAP KORUMASI ---
@@ -163,8 +177,7 @@ client.on('messageCreate', async message => {
         return;
     }
 
-    // --- 4. ULTRA GELİŞMİŞ SAYISAL & HARF BYPASS KORUMALI KÜFÜR FİLTRESİ ---
-    // Eğer mesaj bot komutlarıyla başlıyorsa küfür filtresini atla (yanlış alarm önlemi)
+    // --- 4. ULUSLARARASI KÜRESEL & 1337 BYPASS KORUMALI KÜFÜR VE IRÇILIK FİLTRESİ ---
     const komutMu = message.content.startsWith('.sesegir') || message.content.startsWith('.mute') || 
                     message.content.startsWith('.unmute') || message.content.startsWith('.nuke') || 
                     message.content.startsWith('.rolbilgi') || message.content.startsWith('!kurallar');
@@ -172,6 +185,7 @@ client.on('messageCreate', async message => {
     if (!komutMu) {
         let hamMesaj = message.content.toLowerCase();
         
+        // Evrensel sayısal/sembol taklitlerini harfe çevir
         hamMesaj = hamMesaj
             .replace(/4/g, 'a')
             .replace(/3/g, 'e')
@@ -179,14 +193,20 @@ client.on('messageCreate', async message => {
             .replace(/0/g, 'o')
             .replace(/5/g, 's')
             .replace(/7/g, 't')
-            .replace(/@/g, 'a');
+            .replace(/8/g, 'b')
+            .replace(/9/g, 'g')
+            .replace(/@/g, 'a')
+            .replace(/\$/g, 's')
+            .replace(/!/g, 'i');
 
+        // Bütün noktalama işaretlerini, boşlukları ve yabancı karakterleri normalize et
         let temizMesaj = hamMesaj
             .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, "")
             .replace(/\s+/g, "")
             .replace(/ç/g, 'c')
             .replace(/ğ/g, 'g')
             .replace(/ı/g, 'i')
+            .replace(/i̇/g, 'i')
             .replace(/ö/g, 'o')
             .replace(/ş/g, 's')
             .replace(/ü/g, 'u');
@@ -208,9 +228,9 @@ client.on('messageCreate', async message => {
                 await message.delete();
                 const logChannel = message.guild.channels.cache.find(c => c.name === 'log');
                 if (logChannel) {
-                    await logChannel.send(`⚠️ **Bypass / Sayısal Küfür Yakalandı!**\n👤 **Üye:** ${message.author} (${message.author.tag})\n📁 **Kanal:** ${message.channel}\n💬 **Orijinal Mesaj:** \`${message.content}\``);
+                    await logChannel.send(`🚨 **Uluslararası / Irkçı Küfür Yakalandı!**\n👤 **Üye:** ${message.author} (${message.author.tag})\n📁 **Kanal:** ${message.channel}\n💬 **Orijinal Mesaj:** \`${message.content}\``);
                 } else {
-                    await message.channel.send(`${message.author}, küfür etmek yasak!`);
+                    await message.channel.send(`${message.author}, bu tarz küfür veya ırkçı söylemler yasaktır!`);
                 }
             } catch (err) {
                 console.error('Küfür filtreleme hatası:', err);
@@ -421,7 +441,7 @@ Bu sunucuya katılan herkes kuralları peşinen kabul etmiş sayılır. Keyifli 
 const http = require('http');
 const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('Lexo Bot Full Guvenlik Aktif!\n');
+    res.end('Lexo Bot Global Guvenlik Aktif!\n');
 });
 
 const PORT = process.env.PORT || 3000;

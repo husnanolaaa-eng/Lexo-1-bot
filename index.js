@@ -20,7 +20,7 @@ const client = new Client({
     ]
 });
 
-// Genişletilmiş Küresel, Türkçe, İngilizce, Arapça ve Irkçı/Ağır Hakaret Listesi (Yanlış alarmlar temizlendi)
+// Genişletilmiş Küresel, Türkçe, İngilizce, Arapça ve Irkçı/Ağır Hakaret Listesi
 const blacklist = [
     // Türkçe & Bypass Varyasyonları
     'sikeyim', 'sikim', 'skem', 'sikem', 's1key1m', 's3k1m', 'sıkm',
@@ -47,6 +47,7 @@ const blacklist = [
 
 const spamKontrol = new Map();
 const emojiSpamKontrol = new Map();
+const uyariTakip = new Map();
 
 client.once('ready', () => {
     console.log(`[+] Bot aktif! Giriş yapılan hesap: ${client.user.tag}`);
@@ -119,7 +120,7 @@ client.on('messageCreate', async message => {
     const linkKumesi = /(https?:\/\/|discord\.gg|discord\.com\/invite)/i;
     if (linkKumesi.test(message.content)) {
         const yetkiliMi = message.member.permissions.has(PermissionsBitField.Flags.Administrator) ||
-                         message.member.roles.cache.some(r => ['nuke✅', 'chatyt✅', 'çorum'].includes(r.name));
+                         message.member.roles.cache.some(r => ['nuke✅', 'chatyt✅', 'çorum', 'hayatsız'].includes(r.name));
         
         if (!yetkiliMi) {
             try {
@@ -136,9 +137,12 @@ client.on('messageCreate', async message => {
         }
     }
 
+    const corumVarmi = message.member.roles.cache.some(r => r.name.toLowerCase() === 'çorum');
+    const adminMi = message.member.permissions.has(PermissionsBitField.Flags.Administrator);
+
     // --- 2. EMOJİ / STİCKER SPAM KORUMASI ---
     const emojiSayisi = (message.content.match(/<a?:[a-zA-Z0-9_]+:[0-9]+>/g) || []).length;
-    if (emojiSayisi > 5 || message.stickers.size > 0) {
+    if (!adminMi && !corumVarmi && (emojiSayisi > 5 || message.stickers.size > 0)) {
         const userId = message.author.id;
         const simdi = Date.now();
         if (!emojiSpamKontrol.has(userId)) emojiSpamKontrol.set(userId, []);
@@ -150,11 +154,32 @@ client.on('messageCreate', async message => {
         if (eKayitlari.length >= 3) {
             try {
                 await message.delete();
-                await message.member.timeout(2 * 60 * 1000, 'Aşırı emoji/sticker spamı');
-                await message.channel.send(`⚠️ ${message.author}, ard arda emoji/sticker spamı yaptığı için 2 dakika susturuldu!`);
+                
+                const hasCorum = message.member.roles.cache.some(r => r.name.toLowerCase() === 'çorum');
+                
+                if (!hasCorum) {
+                    if (!uyariTakip.has(userId)) {
+                        uyariTakip.set(userId, true);
+                        await message.channel.send(`⚠️ ${message.author}, Flood ve spam yasaktır bir dahaki seferde mute yersiniz.`);
+                        
+                        const logChannel = message.guild.channels.cache.find(c => c.name === 'log');
+                        if (logChannel) {
+                            await logChannel.send(`🚨 **Emoji/Sticker Spam Uyarısı:** ${message.author} ard arda emoji/sticker spamı yaptı, uyarıldı.`);
+                        }
+                    } else {
+                        await message.member.timeout(3 * 60 * 1000, 'Aşırı emoji/sticker spamı (Tekrar)');
+                        await message.channel.send(`⚠️ ${message.author}, spam yapmaya devam ettiği için 3 dakika süreyle susturuldu!`);
+                        
+                        const logChannel = message.guild.channels.cache.find(c => c.name === 'log');
+                        if (logChannel) {
+                            await logChannel.send(`🔨 **Emoji/Sticker Spam Mute:** ${message.author} 3 dakika süreyle susturuldu.`);
+                        }
+                        uyariTakip.delete(userId);
+                    }
+                }
                 emojiSpamKontrol.set(userId, []);
             } catch (err) {
-                console.error('Emoji spam mute hatası:', err);
+                console.error('Emoji spam koruma hatası:', err);
             }
             return;
         }
@@ -164,22 +189,46 @@ client.on('messageCreate', async message => {
     const userId = message.author.id;
     const simdi = Date.now();
     
-    if (!spamKontrol.has(userId)) spamKontrol.set(userId, []);
-    let kullaniciMesajlari = spamKontrol.get(userId);
-    kullaniciMesajlari.push(simdi);
-    
-    kullaniciMesajlari = kullaniciMesajlari.filter(zaman => simdi - zaman < 5000);
-    spamKontrol.set(userId, kullaniciMesajlari);
+    if (!adminMi && !corumVarmi) {
+        if (!spamKontrol.has(userId)) spamKontrol.set(userId, []);
+        let kullaniciMesajlari = spamKontrol.get(userId);
+        kullaniciMesajlari.push(simdi);
+        
+        kullaniciMesajlari = kullaniciMesajlari.filter(zaman => simdi - zaman < 5000);
+        spamKontrol.set(userId, kullaniciMesajlari);
 
-    if (kullaniciMesajlari.length >= 4) {
-        try {
-            await message.member.timeout(3 * 60 * 1000, 'Arka arkaya spam/flood yapmak');
-            await message.channel.send(`⚠️ ${message.author}, arka arkaya spam/flood yaptığı için 3 dakika süreyle susturuldu!`);
-            spamKontrol.set(userId, []);
-        } catch (err) {
-            console.error('Otomatik mute hatası:', err);
+        if (kullaniciMesajlari.length >= 4) {
+            try {
+                await message.delete().catch(() => {});
+
+                const hasCorum = message.member.roles.cache.some(r => r.name.toLowerCase() === 'çorum');
+
+                if (!hasCorum) {
+                    if (!uyariTakip.has(userId)) {
+                        uyariTakip.set(userId, true);
+                        await message.channel.send(`⚠️ ${message.author}, Flood ve spam yasaktır bir dahaki seferde mute yersiniz.`);
+
+                        const logChannel = message.guild.channels.cache.find(c => c.name === 'log');
+                        if (logChannel) {
+                            await logChannel.send(`⚠️ **Flood / Spam Uyarısı:** ${message.author} arka arkaya mesaj atarak flood yaptı. Uyarı verildi.`);
+                        }
+                    } else {
+                        await message.member.timeout(3 * 60 * 1000, 'Arka arkaya spam/flood yapmak (Tekrar)');
+                        await message.channel.send(`⚠️ ${message.author}, uyarıya rağmen spam/flood yaptığı için 3 dakika süreyle susturuldu!`);
+
+                        const logChannel = message.guild.channels.cache.find(c => c.name === 'log');
+                        if (logChannel) {
+                            await logChannel.send(`🔨 **Flood / Spam Mute:** ${message.author} 3 dakika süreyle susturuldu.`);
+                        }
+                        uyariTakip.delete(userId);
+                    }
+                }
+                spamKontrol.set(userId, []);
+            } catch (err) {
+                console.error('Otomatik flood/mute hatası:', err);
+            }
+            return;
         }
-        return;
     }
 
     // --- 4. ULUSLARARASI KÜRESEL & 1337 BYPASS KORUMALI KÜFÜR VE IRÇILIK FİLTRESİ ---

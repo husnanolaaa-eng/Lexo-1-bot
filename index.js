@@ -20,13 +20,13 @@ const client = new Client({
     ]
 });
 
-// Genişletilmiş Küresel, Türkçe, İngilizce, Arapça ve Irkçı/Ağır Hakaret Listesi
+// Genişletilmiş Küresel, Türkçe, İngilizce, Arapça ve Irkçı/Ağır Hakaret Listesi (Lexo kelimesi hariç tutuldu)
 const blacklist = [
     'sikeyim', 'sikim', 'skem', 'sikem', 's1key1m', 's3k1m', 'sıkm',
     'oç', 'orospu', 'orospu evladı', 'orosph çocuğu', 'oc', '0ç',
     'ibne', 'ibine', '1bne', 'piç', 'p1ç', 'pezevenk', 'pzvnk', 
     'yarrak', 'yrrm', 'yrm', 'yrk', 'yarak', 'yark', 'y4rr4k',
-    'or', 'oe', 'oçoe', 'porno', 'seks', 's3ks', 'sik', 'parçalarım',
+    'or', 'oe', 'oçoe', 'porno', 'seks', 's3ks', 'parçalarım',
     'aminakoydugum', 'amonakoydugum', 'amcikinaqoyim', 'aminakoyim',
     'anani', 'anasi', 'ananin', '4n4n1', '4n4sı',
     'fuck', 'fucking', 'fucked', 'fucker', 'motherfucker', 'mf',
@@ -121,12 +121,17 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
 client.on('messageCreate', async message => {
     if (!message.guild || message.author.bot) return;
 
+    // --- "sa" KONTROLÜ ---
+    if (message.content.toLowerCase() === 'sa') {
+        await message.channel.send('as hoşgeldin bra');
+    }
+
     const adminMi = message.member.permissions.has(PermissionsBitField.Flags.Administrator);
     const rolVarmi = message.member.roles.cache.size > 1;
 
     // --- ROLÜ OLMAYANLAR İÇİN GENEL MESAJ ENGELİ ---
     if (!adminMi && !rolVarmi) {
-        const komutMu = message.content.startsWith('.rolbilgi') || message.content.startsWith('!kurallar');
+        const komutMu = message.content.startsWith('.rolbilgi') || message.content.startsWith('!kurallar') || message.content.startsWith('.şikayet') || message.content.startsWith('.sikayet');
         if (!komutMu) {
             try {
                 await message.delete();
@@ -216,10 +221,12 @@ client.on('messageCreate', async message => {
         }
     }
 
-    // --- KÜFÜR FİLTRESİ ---
+    // --- KÜFÜR FİLTRESİ (Loga atma ve uyarma eklendi) ---
     const komutMu = message.content.startsWith('.sesegir') || message.content.startsWith('.mute') || 
                     message.content.startsWith('.unmute') || message.content.startsWith('.nuke') || 
-                    message.content.startsWith('.rolbilgi') || message.content.startsWith('!kurallar');
+                    message.content.startsWith('.rolbilgi') || message.content.startsWith('!kurallar') ||
+                    message.content.startsWith('.şikayet') || message.content.startsWith('.sikayet') ||
+                    message.content.startsWith('.ship');
 
     if (!komutMu) {
         let hamMesaj = message.content.toLowerCase()
@@ -244,9 +251,13 @@ client.on('messageCreate', async message => {
         if (isProfane) {
             try {
                 await message.delete();
-                await message.channel.send(`${message.author}, bu tarz küfür veya ırkçı söylemler yasaktır!`);
+                await message.channel.send(`⚠️ ${message.author}, küfür etmek yasaktır!`);
+                const logChannel = message.guild.channels.cache.find(c => c.name === 'log');
+                if (logChannel) {
+                    await logChannel.send(`🚨 **Küfür Yakalandı!**\n👤 **Üye:** ${message.author} (${message.author.tag})\n💬 **Mesaj:** \`${message.content}\``);
+                }
             } catch (err) {
-                console.error('Küfür silme hatası:', err);
+                console.error('Küfür log hatası:', err);
             }
             return; 
         }
@@ -272,6 +283,40 @@ client.on('messageCreate', async message => {
             );
             await message.channel.send({ content: `📜 **SUNUCU KURALLARI**\n1. Saygı göster.\n2. Küfür etme.\n3. Reklam yapma.`, components: [row] });
         } catch (err) { console.error(err); }
+        return;
+    }
+
+    // --- ŞİKAYET KOMUTU ---
+    if (message.content.startsWith('.şikayet') || message.content.startsWith('.sikayet')) {
+        try {
+            await message.delete().catch(() => {});
+            await message.channel.send(`Sunucumuzla ilgili herhangi bir şikâyetiniz varsa @cikomiko0787 kullanıcısına DM üzerinden ulaşarak şikâyetinizi iletebilirsiniz.`);
+        } catch (err) { console.error(err); }
+        return;
+    }
+
+    // --- .ship KOMUTU ---
+    if (message.content.startsWith('.ship')) {
+        try {
+            const targetUser = message.mentions.users.first();
+            if (!targetUser) return message.reply('❌ Lütfen shiplemek için bir kullanıcı etiketle! Örnek: `.ship @kullanici`');
+
+            const yuzde = Math.floor(Math.random() * 101); // 0 ile 100 arası rastgele yüzde
+            const user1 = message.author;
+            const user2 = targetUser;
+
+            const shipEmbed = new EmbedBuilder()
+                .setColor('#ff4757')
+                .setTitle('💖 Aşk Testi (.ship) 💕')
+                .setDescription(`💘 **${user1.username}** ❤️ **${user2.username}**\n\n✨ **Uyum Yüzdesi:** \`%${yuzde}\` ✨`)
+                .setThumbnail(user1.displayAvatarURL({ dynamic: true }))
+                .setImage(user2.displayAvatarURL({ dynamic: true }))
+                .setFooter({ text: 'Lexo 1 Aşk Ölçer Sistemi 💘' });
+
+            await message.channel.send({ embeds: [shipEmbed] });
+        } catch (err) {
+            console.error('Ship komut hatası:', err);
+        }
         return;
     }
 
@@ -328,18 +373,42 @@ client.on('messageCreate', async message => {
         return;
     }
 
+    // --- NUKE SİSTEMİ (.nuke - Onay Butonlu) ---
     if (message.content.startsWith('.nuke')) {
         const nukeRolu = message.guild.roles.cache.find(r => r.name.toLowerCase() === 'nuke✅');
         const corumRolu = message.guild.roles.cache.find(r => r.name.toLowerCase() === 'çorum');
         const yetki = adminMi || (nukeRolu && message.member.roles.cache.has(nukeRolu.id)) || (corumRolu && message.member.roles.cache.has(corumRolu.id));
 
         if (!yetki) return message.reply('❌ Yetkiniz yok!');
-        try {
-            const position = message.channel.position;
-            const newChannel = await message.channel.clone({ position: position });
-            await message.channel.delete();
-            await newChannel.send(`✅ Kanal ${message.author} tarafından nuke'lendi.`);
-        } catch (err) { console.error(err); }
+
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('nuke_evet').setLabel('Evet, Sıfırla').setStyle(ButtonStyle.Danger),
+            new ButtonBuilder().setCustomId('nuke_hayir').setLabel('İptal').setStyle(ButtonStyle.Secondary)
+        );
+
+        const confirmMsg = await message.channel.send({
+            content: `⚠️ ${message.author}, bu kanalı sıfırlamak istediğine emin misin?`,
+            components: [row]
+        });
+
+        const filter = i => i.user.id === message.author.id;
+        const collector = confirmMsg.createMessageComponentCollector({ filter, time: 20000 });
+
+        collector.on('collect', async i => {
+            if (i.customId === 'nuke_evet') {
+                await i.update({ content: '🔥 Kanal nuke’leniyor...', components: [] });
+                try {
+                    const position = message.channel.position;
+                    const newChannel = await message.channel.clone({ position: position });
+                    await message.channel.delete();
+                    await newChannel.send(`✅ Kanal ${message.author} tarafından sıfırlandı.`);
+                } catch (err) {
+                    console.error(err);
+                }
+            } else {
+                await i.update({ content: '❌ Nuke iptal edildi.', components: [] });
+            }
+        });
         return;
     }
 });

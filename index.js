@@ -20,22 +20,14 @@ const client = new Client({
     ]
 });
 
-// Temel ve net küfür/hakaret listesi (yanlış algılamaları önlemek için optimize edildi)
+// Genişletilmiş Türkçe Küfür ve Hakaret Kök Listesi (Yanlış algılamaları önleyen temiz yapı)
 const blacklist = [
-    'sikeyim', 'sikim', 'skem', 'sikem', 's1key1m', 's3k1m',
-    'oç', 'orospu', 'orospu evladı', 'oc', '0ç',
+    'sikeyim', 'sikim', 'skem', 'sikem', 's1key1m', 's3k1m', 'sıkm', 'sik', 'siker',
+    'oç', 'orospu', 'orospu evladı', 'orosph çocuğu', 'oc', '0ç',
     'ibne', 'ibine', '1bne', 'piç', 'p1ç', 'pezevenk', 'pzvnk', 
     'yarrak', 'yrrm', 'yrm', 'yrk', 'yarak', 'yark', 'y4rr4k',
-    'porno', 'seks', 's3ks', 'parçalarım',
-    'aminakoydugum', 'amonakoydugum', 'aminakoyim',
-    'anani', 'anasi', 'ananin', '4n4n1', '4n4sı',
-    'fuck', 'fucking', 'fucked', 'fucker', 'motherfucker',
-    'fack', 'fak', 'fuk', 'fuuck', 'fck',
-    'shit', 'shitty', 'bitch', 'asshole', 'bastard', 'cunt', 'dick', 
-    'pussy', 'cock', 'whore', 'slut', 'idiot', 'retard',
-    'nigger', 'nigga', 'n1gg3r', 'n1gga', 'neger', 'negro', 'niggah',
-    'sharmuta', 'sharmouta', 'awad', 'kalb', 'hayawan',
-    'putain', 'merde', 'scheiße', 'arschloch'
+    'aminakoydugum', 'amonakoydugum', 'amcikinaqoyim', 'aminakoyim', 'amcik', 'amcık',
+    'anani', 'anasi', 'ananin', '4n4n1', '4n4sı', 'anneniyi', 'annenisikeyim', 'ananinami'
 ];
 
 const spamKontrol = new Map();
@@ -71,10 +63,11 @@ client.on('guildMemberAdd', async member => {
     }
 });
 
-// --- BUTON ETKİLEŞİMİ ---
+// --- BUTON ETKİLEŞİMLERİ ---
 client.on('interactionCreate', async interaction => {
     if (!interaction.isButton()) return;
 
+    // 1. Kuralları Kabul Et Butonu
     if (interaction.customId === 'kabul_et') {
         try {
             await interaction.deferUpdate();
@@ -93,6 +86,93 @@ client.on('interactionCreate', async interaction => {
         } catch (err) {
             console.error('Kabul et buton hatası:', err);
         }
+        return;
+    }
+
+    // --- LOG KANALI CEZA BUTONLARI ---
+    // CustomId formatı: islem_kullaniciId
+    const [islem, hedefId] = interaction.customId.split('_');
+    if (!['ban', 'kick', 'mute', 'mahkeme'].includes(islem)) return;
+
+    try {
+        const guild = interaction.guild;
+        const hedefUye = await guild.members.fetch(hedefId).catch(() => null);
+
+        if (!hedefUye) {
+            return interaction.reply({ content: '❌ Kullanıcı sunucuda bulunamadı veya ayrılmış.', ephemeral: true });
+        }
+
+        if (islem === 'ban') {
+            await hedefUye.ban({ reason: 'Küfür ve kural ihlali sebebiyle log paneli üzerinden banlandı.' });
+            await interaction.update({ content: `🔨 **${hedefUye.user.tag}** sunucudan banlandı! (İşlemi Yapan: ${interaction.user})`, components: [] });
+        } 
+        else if (islem === 'kick') {
+            await hedefUye.kick('Küfür sebebiyle log paneli üzerinden atıldı.');
+            await interaction.update({ content: `👢 **${hedefUye.user.tag}** sunucudan atıldı! (İşlemi Yapan: ${interaction.user})`, components: [] });
+        } 
+        else if (islem === 'mute') {
+            await hedefUye.timeout(3 * 60 * 1000, 'Küfür sebebiyle log paneli üzerinden susturuldu.');
+            await interaction.update({ content: `🔇 **${hedefUye.user.tag}** 3 dakika süreyle susturuldu! (İşlemi Yapan: ${interaction.user})`, components: [] });
+
+            // 3 dakika sonra Mute kaldırılacak ve DM atılacak
+            setTimeout(async () => {
+                try {
+                    await hedefUye.timeout(null, 'Mute süresi doldu.');
+                    
+                    // Sunucu sahibini bul (.cikomiko0787 veya ID ile)
+                    const sahip = guild.members.cache.find(m => m.user.username.toLowerCase() === 'cikomiko0787' || m.id === 'SUNUCU_SAHIBI_ID_BURAYA');
+                    if (sahip) {
+                        await sahip.send(`@${hedefUye.user.tag} kullanıcısının küfür sebebiyle atılan mute kaldırıldı.`);
+                    }
+                } catch (e) {
+                    console.error('Mute otomatik açılma / DM hatası:', e);
+                }
+            }, 3 * 60 * 1000);
+        } 
+        else if (islem === 'mahkeme') {
+            // Kullanıcının tüm rollerini al (erişimi kes)
+            const eskiRoller = hedefUye.roles.cache.map(r => r.id).filter(id => id !== guild.id);
+            await hedefUye.roles.remove(eskiRoller).catch(() => {});
+
+            // Çorum rolünü bul
+            const corumRolu = guild.roles.cache.find(r => r.name.toLowerCase() === 'çorum');
+
+            // Mahkeme kanalı oluştur
+            const mahkemeKanali = await guild.channels.create({
+                name: `mahkeme-${hedefUye.user.username}`,
+                type: ChannelType.GuildText,
+                permissionOverwrites: [
+                    {
+                        id: guild.id, // Herkes göremez
+                        deny: [PermissionsBitField.Flags.ViewChannel]
+                    },
+                    {
+                        id: hedefUye.id, // Sanık görebilir ve yazabilir
+                        allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages]
+                    },
+                    {
+                        id: interaction.client.user.id, // Bot görebilir
+                        allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages]
+                    },
+                    ...(corumRolu ? [{
+                        id: corumRolu.id, // Çorum rolü görebilir
+                        allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages]
+                    }] : [])
+                ]
+            });
+
+            // Sunucu sahibine de özel yetki verelim (Garanti olsun)
+            const sahip = guild.members.cache.find(m => m.user.username.toLowerCase() === 'cikomiko0787');
+            if (sahip) {
+                await mahkemeKanali.permissionOverwrites.create(sahip.id, { ViewChannel: true, SendMessages: true });
+            }
+
+            await mahkemeKanali.send(`⚖️ **MAHKEME BAŞLATILDI!**\nSanık: ${hedefUye}\n\nKuralları ihlal eden bu kullanıcı ile sunucu sahibi @cikomiko0787 buradan görüşebilir.\nMahkemeyi bitirmek ve kanalı silmek için yetkili **.bitir** yazmalıdır.`);
+            await interaction.update({ content: `⚖️ **${hedefUye.user.tag}** için mahkeme kanalı açıldı: ${mahkemeKanali} (İşlemi Yapan: ${interaction.user})`, components: [] });
+        }
+    } catch (err) {
+        console.error('Buton işlem hatası:', err);
+        await interaction.reply({ content: '❌ İşlem gerçekleştirilirken bir hata oluştu!', ephemeral: true });
     }
 });
 
@@ -120,6 +200,27 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
 
 client.on('messageCreate', async message => {
     if (!message.guild || message.author.bot) return;
+
+    // --- MAHKEME KANALINDA .bitir KOMUTU ---
+    if (message.content.toLowerCase() === '.bitir' && message.channel.name.startsWith('mahkeme-')) {
+        const corumVarmi = message.member.roles.cache.some(r => r.name.toLowerCase() === 'çorum');
+        const adminMi = message.member.permissions.has(PermissionsBitField.Flags.Administrator);
+        const isSahip = message.author.username.toLowerCase() === 'cikomiko0787';
+
+        if (adminMi || corumVarmi || isSahip) {
+            try {
+                await message.channel.send('⚖️ Mahkeme sona erdi, kanal birazdan siliniyor...');
+                setTimeout(async () => {
+                    await message.channel.delete().catch(() => {});
+                }, 3000);
+            } catch (err) {
+                console.error('Mahkeme silme hatası:', err);
+            }
+            return;
+        } else {
+            return message.reply('❌ Bu komutu sadece sunucu sahibi veya "çorum" rolüne sahip kişiler kullanabilir!');
+        }
+    }
 
     // --- "sa" KONTROLÜ ---
     if (message.content.toLowerCase() === 'sa') {
@@ -177,7 +278,7 @@ client.on('messageCreate', async message => {
                 await message.delete();
                 if (!uyariTakip.has(userId)) {
                     uyariTakip.set(userId, true);
-                    await message.channel.send(`⚠️ ${message.author}, Flood and spam yasaktır bir dahaki seferde mute yersiniz.`);
+                    await message.channel.send(`⚠️ ${message.author}, Flood ve spam yasaktır bir dahaki seferde mute yersiniz.`);
                 } else {
                     await message.member.timeout(3 * 60 * 1000, 'Emoji spam');
                     await message.channel.send(`⚠️ ${message.author}, spam yapmaya devam ettiği için 3 dakika süreyle susturuldu!`);
@@ -221,15 +322,15 @@ client.on('messageCreate', async message => {
         }
     }
 
-    // --- GELİŞTİRİLMİŞ KÜFÜR FİLTRESİ (Yanlış Algılama Önleyici & Tüm Kanallarda Loglama) ---
+    // --- GELİŞTİRİLMİŞ TÜRKÇE KÜFÜR FİLTRESİ & BUTONLU LOG PANELİ ---
     const komutMu = message.content.startsWith('.sesegir') || message.content.startsWith('.mute') || 
                     message.content.startsWith('.unmute') || message.content.startsWith('.nuke') || 
                     message.content.startsWith('.rolbilgi') || message.content.startsWith('!kurallar') ||
                     message.content.startsWith('.şikayet') || message.content.startsWith('.sikayet') ||
-                    message.content.startsWith('.ship');
+                    message.content.startsWith('.ship') || message.content.startsWith('.bitir');
 
     if (!komutMu && !adminMi) {
-        // Mesajı kelimelere ayırıp kontrol etmek normal kelimelerin (şarkı vb.) küfür sanılmasını önler
+        // Kelime kelime kontrol ederek "şarkı" gibi kelimelerin küfür sanılmasını önlüyoruz
         const kelimeler = message.content.toLowerCase()
             .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, " ")
             .split(/\s+/);
@@ -237,7 +338,6 @@ client.on('messageCreate', async message => {
         let isProfane = false;
 
         for (let kelime of kelimeler) {
-            // Harf taklitlerini temizle ama kelimenin bütünlüğünü koru
             let temizKelime = kelime
                 .replace(/4/g, 'a').replace(/3/g, 'e').replace(/1/g, 'i').replace(/0/g, 'o')
                 .replace(/5/g, 's').replace(/7/g, 't').replace(/8/g, 'b').replace(/9/g, 'g')
@@ -245,7 +345,6 @@ client.on('messageCreate', async message => {
                 .replace(/ç/g, 'c').replace(/ğ/g, 'g').replace(/ı/g, 'i').replace(/i̇/g, 'i')
                 .replace(/ö/g, 'o').replace(/ş/g, 's').replace(/ü/g, 'u');
 
-            // Eğer küfür listesindeki bir kelimeyle birebir eşleşiyorsa veya içinde tam olarak geçiyorsa
             if (blacklist.some(yasakli => temizKelime === yasakli || temizKelime.includes(yasakli))) {
                 isProfane = true;
                 break;
@@ -257,10 +356,28 @@ client.on('messageCreate', async message => {
                 await message.delete();
                 await message.channel.send(`⚠️ ${message.author}, küfür etmek yasaktır!`);
                 
-                // Herhangi bir kanalda edilen küfürü "log" isimli kanala raporla
+                // Log kanalına ID, kullanıcı ismi ve butonlu yönetim paneli gönderimi
                 const logChannel = message.guild.channels.cache.find(c => c.name === 'log');
                 if (logChannel) {
-                    await logChannel.send(`🚨 **Küfür Yakalandı!**\n📂 **Kanal:** ${message.channel}\n👤 **Üye:** ${message.author} (${message.author.tag})\n💬 **Mesaj:** \`${message.content}\``);
+                    const embed = new EmbedBuilder()
+                        .setColor('#ff0000')
+                        .setTitle('🚨 Küfür Yakalandı!')
+                        .addFields(
+                            { name: '👤 Kullanıcı', value: `${message.author} (${message.author.tag})`, inline: true },
+                            { name: '🆔 Kullanıcı ID', value: `${message.author.id}`, inline: true },
+                            { name: '📂 Kanal', value: `${message.channel}`, inline: true },
+                            { name: '💬 Edilen Küfür / Mesaj', value: `\`${message.content}\`` }
+                        )
+                        .setTimestamp();
+
+                    const row = new ActionRowBuilder().addComponents(
+                        new ButtonBuilder().setCustomId(`ban_${message.author.id}`).setLabel('BANLA').setStyle(ButtonStyle.Danger),
+                        new ButtonBuilder().setCustomId(`kick_${message.author.id}`).setLabel('KİCKLE').setStyle(ButtonStyle.Secondary),
+                        new ButtonBuilder().setCustomId(`mute_${message.author.id}`).setLabel('MUTE AT').setStyle(ButtonStyle.Primary),
+                        new ButtonBuilder().setCustomId(`mahkeme_${message.author.id}`).setLabel('MAHKEME').setStyle(ButtonStyle.Success)
+                    );
+
+                    await logChannel.send({ embeds: [embed], components: [row] });
                 }
             } catch (err) {
                 console.error('Küfür log hatası:', err);
@@ -307,7 +424,7 @@ client.on('messageCreate', async message => {
             const targetUser = message.mentions.users.first();
             if (!targetUser) return message.reply('❌ Lütfen shiplemek için bir kullanıcı etiketle! Örnek: `.ship @kullanici`');
 
-            const yuzde = Math.floor(Math.random() * 101); // 0 ile 100 arası rastgele yüzde
+            const yuzde = Math.floor(Math.random() * 101);
             const user1 = message.author;
             const user2 = targetUser;
 
@@ -317,7 +434,7 @@ client.on('messageCreate', async message => {
                 .setDescription(`💘 **${user1.username}** ❤️ **${user2.username}**\n\n✨ **Uyum Yüzdesi:** \`%${yuzde}\` ✨`)
                 .setThumbnail(user1.displayAvatarURL({ dynamic: true }))
                 .setImage(user2.displayAvatarURL({ dynamic: true }))
-                .setFooter({ text: 'Lexo 1 Aşk Ölçer Sistemi 💘' });
+                .setFooter({ text: 'Lexo Aşk Ölçer Sistemi 💘' });
 
             await message.channel.send({ embeds: [shipEmbed] });
         } catch (err) {

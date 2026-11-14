@@ -90,7 +90,6 @@ client.on('interactionCreate', async interaction => {
     }
 
     // --- LOG KANALI CEZA BUTONLARI ---
-    // CustomId formatı: islem_kullaniciId
     const [islem, hedefId] = interaction.customId.split('_');
     if (!['ban', 'kick', 'mute', 'mahkeme'].includes(islem)) return;
 
@@ -119,8 +118,7 @@ client.on('interactionCreate', async interaction => {
                 try {
                     await hedefUye.timeout(null, 'Mute süresi doldu.');
                     
-                    // Sunucu sahibini bul (.cikomiko0787 veya ID ile)
-                    const sahip = guild.members.cache.find(m => m.user.username.toLowerCase() === 'cikomiko0787' || m.id === 'SUNUCU_SAHIBI_ID_BURAYA');
+                    const sahip = guild.members.cache.find(m => m.user.username.toLowerCase() === 'cikomiko0787');
                     if (sahip) {
                         await sahip.send(`@${hedefUye.user.tag} kullanıcısının küfür sebebiyle atılan mute kaldırıldı.`);
                     }
@@ -130,38 +128,34 @@ client.on('interactionCreate', async interaction => {
             }, 3 * 60 * 1000);
         } 
         else if (islem === 'mahkeme') {
-            // Kullanıcının tüm rollerini al (erişimi kes)
             const eskiRoller = hedefUye.roles.cache.map(r => r.id).filter(id => id !== guild.id);
             await hedefUye.roles.remove(eskiRoller).catch(() => {});
 
-            // Çorum rolünü bul
             const corumRolu = guild.roles.cache.find(r => r.name.toLowerCase() === 'çorum');
 
-            // Mahkeme kanalı oluştur
             const mahkemeKanali = await guild.channels.create({
                 name: `mahkeme-${hedefUye.user.username}`,
                 type: ChannelType.GuildText,
                 permissionOverwrites: [
                     {
-                        id: guild.id, // Herkes göremez
+                        id: guild.id,
                         deny: [PermissionsBitField.Flags.ViewChannel]
                     },
                     {
-                        id: hedefUye.id, // Sanık görebilir ve yazabilir
+                        id: hedefUye.id,
                         allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages]
                     },
                     {
-                        id: interaction.client.user.id, // Bot görebilir
+                        id: interaction.client.user.id,
                         allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages]
                     },
                     ...(corumRolu ? [{
-                        id: corumRolu.id, // Çorum rolü görebilir
+                        id: corumRolu.id,
                         allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages]
                     }] : [])
                 ]
             });
 
-            // Sunucu sahibine de özel yetki verelim (Garanti olsun)
             const sahip = guild.members.cache.find(m => m.user.username.toLowerCase() === 'cikomiko0787');
             if (sahip) {
                 await mahkemeKanali.permissionOverwrites.create(sahip.id, { ViewChannel: true, SendMessages: true });
@@ -327,10 +321,10 @@ client.on('messageCreate', async message => {
                     message.content.startsWith('.unmute') || message.content.startsWith('.nuke') || 
                     message.content.startsWith('.rolbilgi') || message.content.startsWith('!kurallar') ||
                     message.content.startsWith('.şikayet') || message.content.startsWith('.sikayet') ||
-                    message.content.startsWith('.ship') || message.content.startsWith('.bitir');
+                    message.content.startsWith('.ship') || message.content.startsWith('.zekam') || 
+                    message.content.startsWith('.bitir');
 
     if (!komutMu && !adminMi) {
-        // Kelime kelime kontrol ederek "şarkı" gibi kelimelerin küfür sanılmasını önlüyoruz
         const kelimeler = message.content.toLowerCase()
             .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, " ")
             .split(/\s+/);
@@ -356,7 +350,6 @@ client.on('messageCreate', async message => {
                 await message.delete();
                 await message.channel.send(`⚠️ ${message.author}, küfür etmek yasaktır!`);
                 
-                // Log kanalına ID, kullanıcı ismi ve butonlu yönetim paneli gönderimi
                 const logChannel = message.guild.channels.cache.find(c => c.name === 'log');
                 if (logChannel) {
                     const embed = new EmbedBuilder()
@@ -387,6 +380,36 @@ client.on('messageCreate', async message => {
     }
 
     // --- KOMUTLAR ---
+
+    // --- .zekam KOMUTU ---
+    if (message.content.startsWith('.zekam')) {
+        try {
+            const targetUser = message.mentions.users.first() || message.author;
+            const iqPuani = Math.floor(Math.random() * 151);
+
+            let durumMesaji = "";
+            if (iqPuani >= 80) {
+                durumMesaji = `✨ Zeka fışkırıyor maşAllah mübarek!`;
+            } else {
+                durumMesaji = `💀 Beynin yok sanırım.`;
+            }
+
+            const zekamEmbed = new EmbedBuilder()
+                .setColor(iqPuani >= 80 ? '#2ed573' : '#ff4757')
+                .setTitle('🧠 IQ TESTİ 🧠')
+                .setDescription(`📊 **${targetUser.username}** adlı kişinin IQ Seviyesi: \`${iqPuani}\``)
+                .setThumbnail(targetUser.displayAvatarURL({ dynamic: true }))
+                .setImage('https://images.unsplash.com/photo-1507413245164-6160d8298b31?q=80&w=600&auto=format&fit=crop')
+                .setFooter({ text: 'Lexo IQ Ölçüm Sistemi 🧬' });
+
+            await message.reply({ content: `${targetUser} ${durumMesaji}`, embeds: [zekamEmbed] });
+        } catch (err) {
+            console.error('Zekam komut hatası:', err);
+            message.reply('❌ IQ testi yapılırken bir hata oluştu!');
+        }
+        return;
+    }
+
     if (message.content.startsWith('.rolbilgi')) {
         try {
             await message.delete().catch(() => {});

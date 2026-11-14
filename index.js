@@ -20,22 +20,22 @@ const client = new Client({
     ]
 });
 
-// Genişletilmiş Küresel, Türkçe, İngilizce, Arapça ve Irkçı/Ağır Hakaret Listesi (Lexo kelimesi hariç tutuldu)
+// Temel ve net küfür/hakaret listesi (yanlış algılamaları önlemek için optimize edildi)
 const blacklist = [
-    'sikeyim', 'sikim', 'skem', 'sikem', 's1key1m', 's3k1m', 'sıkm',
-    'oç', 'orospu', 'orospu evladı', 'orosph çocuğu', 'oc', '0ç',
+    'sikeyim', 'sikim', 'skem', 'sikem', 's1key1m', 's3k1m',
+    'oç', 'orospu', 'orospu evladı', 'oc', '0ç',
     'ibne', 'ibine', '1bne', 'piç', 'p1ç', 'pezevenk', 'pzvnk', 
     'yarrak', 'yrrm', 'yrm', 'yrk', 'yarak', 'yark', 'y4rr4k',
-    'or', 'oe', 'oçoe', 'porno', 'seks', 's3ks', 'parçalarım',
-    'aminakoydugum', 'amonakoydugum', 'amcikinaqoyim', 'aminakoyim',
+    'porno', 'seks', 's3ks', 'parçalarım',
+    'aminakoydugum', 'amonakoydugum', 'aminakoyim',
     'anani', 'anasi', 'ananin', '4n4n1', '4n4sı',
-    'fuck', 'fucking', 'fucked', 'fucker', 'motherfucker', 'mf',
-    'fack', 'fak', 'fuk', 'faak', 'fuuck', 'fck',
+    'fuck', 'fucking', 'fucked', 'fucker', 'motherfucker',
+    'fack', 'fak', 'fuk', 'fuuck', 'fck',
     'shit', 'shitty', 'bitch', 'asshole', 'bastard', 'cunt', 'dick', 
     'pussy', 'cock', 'whore', 'slut', 'idiot', 'retard',
     'nigger', 'nigga', 'n1gg3r', 'n1gga', 'neger', 'negro', 'niggah',
-    'sharmuta', 'sharmouta', 'kesh ummak', 'awad', 'kalb', 'hayawan',
-    'kos omak', 'kus omak', 'putain', 'merde', 'scheiße', 'arschloch'
+    'sharmuta', 'sharmouta', 'awad', 'kalb', 'hayawan',
+    'putain', 'merde', 'scheiße', 'arschloch'
 ];
 
 const spamKontrol = new Map();
@@ -177,7 +177,7 @@ client.on('messageCreate', async message => {
                 await message.delete();
                 if (!uyariTakip.has(userId)) {
                     uyariTakip.set(userId, true);
-                    await message.channel.send(`⚠️ ${message.author}, Flood ve spam yasaktır bir dahaki seferde mute yersiniz.`);
+                    await message.channel.send(`⚠️ ${message.author}, Flood and spam yasaktır bir dahaki seferde mute yersiniz.`);
                 } else {
                     await message.member.timeout(3 * 60 * 1000, 'Emoji spam');
                     await message.channel.send(`⚠️ ${message.author}, spam yapmaya devam ettiği için 3 dakika süreyle susturuldu!`);
@@ -221,40 +221,46 @@ client.on('messageCreate', async message => {
         }
     }
 
-    // --- KÜFÜR FİLTRESİ (Loga atma ve uyarma eklendi) ---
+    // --- GELİŞTİRİLMİŞ KÜFÜR FİLTRESİ (Yanlış Algılama Önleyici & Tüm Kanallarda Loglama) ---
     const komutMu = message.content.startsWith('.sesegir') || message.content.startsWith('.mute') || 
                     message.content.startsWith('.unmute') || message.content.startsWith('.nuke') || 
                     message.content.startsWith('.rolbilgi') || message.content.startsWith('!kurallar') ||
                     message.content.startsWith('.şikayet') || message.content.startsWith('.sikayet') ||
                     message.content.startsWith('.ship');
 
-    if (!komutMu) {
-        let hamMesaj = message.content.toLowerCase()
-            .replace(/4/g, 'a').replace(/3/g, 'e').replace(/1/g, 'i').replace(/0/g, 'o')
-            .replace(/5/g, 's').replace(/7/g, 't').replace(/8/g, 'b').replace(/9/g, 'g')
-            .replace(/@/g, 'a').replace(/\$/g, 's').replace(/!/g, 'i');
+    if (!komutMu && !adminMi) {
+        // Mesajı kelimelere ayırıp kontrol etmek normal kelimelerin (şarkı vb.) küfür sanılmasını önler
+        const kelimeler = message.content.toLowerCase()
+            .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, " ")
+            .split(/\s+/);
 
-        let temizMesaj = hamMesaj
-            .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, "")
-            .replace(/\s+/g, "")
-            .replace(/ç/g, 'c').replace(/ğ/g, 'g').replace(/ı/g, 'i').replace(/i̇/g, 'i')
-            .replace(/ö/g, 'o').replace(/ş/g, 's').replace(/ü/g, 'u');
+        let isProfane = false;
 
-        let isProfane = blacklist.some(yasakli => {
-            let duzYasakli = yasakli.toLowerCase()
-                .replace(/\s+/g, "")
-                .replace(/ç/g, 'c').replace(/ğ/g, 'g').replace(/ı/g, 'i')
+        for (let kelime of kelimeler) {
+            // Harf taklitlerini temizle ama kelimenin bütünlüğünü koru
+            let temizKelime = kelime
+                .replace(/4/g, 'a').replace(/3/g, 'e').replace(/1/g, 'i').replace(/0/g, 'o')
+                .replace(/5/g, 's').replace(/7/g, 't').replace(/8/g, 'b').replace(/9/g, 'g')
+                .replace(/@/g, 'a').replace(/\$/g, 's').replace(/!/g, 'i')
+                .replace(/ç/g, 'c').replace(/ğ/g, 'g').replace(/ı/g, 'i').replace(/i̇/g, 'i')
                 .replace(/ö/g, 'o').replace(/ş/g, 's').replace(/ü/g, 'u');
-            return temizMesaj.includes(duzYasakli);
-        });
+
+            // Eğer küfür listesindeki bir kelimeyle birebir eşleşiyorsa veya içinde tam olarak geçiyorsa
+            if (blacklist.some(yasakli => temizKelime === yasakli || temizKelime.includes(yasakli))) {
+                isProfane = true;
+                break;
+            }
+        }
 
         if (isProfane) {
             try {
                 await message.delete();
                 await message.channel.send(`⚠️ ${message.author}, küfür etmek yasaktır!`);
+                
+                // Herhangi bir kanalda edilen küfürü "log" isimli kanala raporla
                 const logChannel = message.guild.channels.cache.find(c => c.name === 'log');
                 if (logChannel) {
-                    await logChannel.send(`🚨 **Küfür Yakalandı!**\n👤 **Üye:** ${message.author} (${message.author.tag})\n💬 **Mesaj:** \`${message.content}\``);
+                    await logChannel.send(`🚨 **Küfür Yakalandı!**\n📂 **Kanal:** ${message.channel}\n👤 **Üye:** ${message.author} (${message.author.tag})\n💬 **Mesaj:** \`${message.content}\``);
                 }
             } catch (err) {
                 console.error('Küfür log hatası:', err);

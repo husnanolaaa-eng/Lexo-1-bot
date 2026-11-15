@@ -226,7 +226,7 @@ client.on('messageCreate', async message => {
 
     // --- ROLÜ OLMAYANLAR İÇİN GENEL MESAJ ENGELİ ---
     if (!adminMi && !rolVarmi) {
-        const komutMu = message.content.startsWith('.rolbilgi') || message.content.startsWith('!kurallar') || message.content.startsWith('.şikayet') || message.content.startsWith('.sikayet');
+        const komutMu = message.content.startsWith('!roller') || message.content.startsWith('!kurallar') || message.content.startsWith('.şikayet') || message.content.startsWith('.sikayet');
         if (!komutMu) {
             try {
                 await message.delete();
@@ -319,7 +319,7 @@ client.on('messageCreate', async message => {
     // --- GELİŞTİRİLMİŞ TÜRKÇE KÜFÜR FİLTRESİ & BUTONLU LOG PANELİ ---
     const komutMu = message.content.startsWith('.sesegir') || message.content.startsWith('.mute') || 
                     message.content.startsWith('.unmute') || message.content.startsWith('.nuke') || 
-                    message.content.startsWith('.rolbilgi') || message.content.startsWith('!kurallar') ||
+                    message.content.startsWith('!roller') || message.content.startsWith('!kurallar') ||
                     message.content.startsWith('.şikayet') || message.content.startsWith('.sikayet') ||
                     message.content.startsWith('.ship') || message.content.startsWith('.zekam') || 
                     message.content.startsWith('.bitir');
@@ -381,6 +381,61 @@ client.on('messageCreate', async message => {
 
     // --- KOMUTLAR ---
 
+    // --- !roller KOMUTU (Sadece Çorum rolüne sahip olanlar kullanabilir) ---
+    if (message.content.startsWith('!roller')) {
+        try {
+            await message.delete().catch(() => {});
+
+            const corumVarmi = message.member.roles.cache.some(r => r.name.toLowerCase() === 'çorum');
+            const adminMi = message.member.permissions.has(PermissionsBitField.Flags.Administrator);
+
+            if (!corumVarmi && !adminMi) {
+                return message.reply('❌ Bu komutu sadece "çorum" rolüne sahip yetkililer kullanabilir!');
+            }
+
+            const rollerEmbed = new EmbedBuilder()
+                .setColor('#00ffcc')
+                .setTitle('🏅 AKTİF ÜYE ÖDÜLLERİ VE YETKİ KURALLARI')
+                .setDescription('Sunucumuzda 1.000 mesaj gönderen üyelere **nuke✅**, 2.000 mesaj gönderen üyelere ise **chatyt✅** rolü verilecektir. (Şimdilik.)\n\n---')
+                .addFields(
+                    { 
+                        name: '🔇 chatyt✅', 
+                        value: 'Bu role sahip olan üyeler, diğer üyeleri etiketleyerek susturma yetkisine sahiptir.\n' +
+                               '• Susturmak için: `.mute @kullanici`\n' +
+                               '• Susturmayı kaldırmak için: `.unmute @kullanici`\n' +
+                               'Susturma işleminin en az 3 dakika sürmesi gerekmektedir.\n' +
+                               'Bu yetki, sunucu içerisindeki düzeni korumak ve kurallara aykırı davranışlarda bulunan üyelerin gerekli durumlarda susturulmasını sağlamak amacıyla verilmiştir.\n' +
+                               'Kişisel anlaşmazlıklar, özel nedenler veya keyfî davranışlar sebebiyle susturma işlemi gerçekleştirmek kesinlikle yasaktır. Yetkinin kötüye kullanılması veya gereksiz yere kullanılması durumunda rolünüz geri alınacaktır.'
+                    },
+                    { 
+                        name: '💥 nuke✅', 
+                        value: 'Bu role sahip olan üyeler, yetkili oldukları kanallardaki mesajları silebilir.\n' +
+                               'Mesajları silmek istediğiniz kanala girmeniz ve sohbet kısmına `.nuke` yazmanız yeterlidir.\n' +
+                               'Ancak aynı kanalda art arda Nuke işlemi uygulayarak sohbet düzenini bozmak kesinlikle yasaktır. Bu yetki, gereksiz mesaj yoğunluğunu ve kanal kirliliğini gidermek amacıyla kullanılmalıdır.\n' +
+                               'Yetkinin gereksiz veya kötüye kullanılması durumunda rolünüz geri alınacaktır.'
+                    },
+                    { 
+                        name: '🔊 ses yt✅', 
+                        value: 'Bu role sahip olan üyeler, ses kanallarında sohbetin düzenini bozan, diğer üyeleri rahatsız eden veya ses kanalının işleyişini olumsuz etkileyen kullanıcıları susturabilir ya da sağırlaştırabilir.\n' +
+                               'Bu yetkiye sahip olabilmek için ses kanallarında toplam 50 saatlik aktiflik sağlamanız gerekmektedir. (Şimdilik.)\n' +
+                               'Kişisel anlaşmazlıklar, keyfî davranışlar veya herhangi bir geçerli sebep olmaksızın üyeleri susturmak ya da sağırlaştırmak kesinlikle yasaktır.'
+                    },
+                    { 
+                        name: '𝐋𝐄𝐁𝐋𝐄𝐁İ', 
+                        value: 'Bu role sahip olan üyelerin, sunucu içerisinde önemli bir duyuru veya gerçekten bütün üyelerin bilgilendirilmesini gerektiren bir durum olmadığı sürece `@everyone` etiketini kullanarak tüm sunucu üyelerini etiketlemesi yasaktır.\n' +
+                               '@everyone etiketi, bütün sunucu üyelerine bildirim gönderdiğinden yalnızca önemli ve gerekli durumlarda kullanılmalıdır. Gereksiz yere yapılan toplu etiketlemeler üyelerin rahatsız olmasına neden olur.'
+                    }
+                )
+                .setFooter({ text: 'Lexo Güvenlik ve Bilgilendirme Sistemi' })
+                .setTimestamp();
+
+            await message.channel.send({ embeds: [rollerEmbed] });
+        } catch (err) { 
+            console.error('Roller komut hatası:', err); 
+        }
+        return;
+    }
+
     // --- .zekam KOMUTU ---
     if (message.content.startsWith('.zekam')) {
         try {
@@ -407,17 +462,6 @@ client.on('messageCreate', async message => {
             console.error('Zekam komut hatası:', err);
             message.reply('❌ IQ testi yapılırken bir hata oluştu!');
         }
-        return;
-    }
-
-    if (message.content.startsWith('.rolbilgi')) {
-        try {
-            await message.delete().catch(() => {});
-            const embed = new EmbedBuilder()
-                .setColor('#00ffcc')
-                .setDescription(`🎖️ **AKTİF ÜYE ÖDÜLLERİ**\n\n1.000 mesaja **nuke✅**, 2.000 mesaja **chatyt✅** rolü verilir.`);
-            await message.channel.send({ embeds: [embed] });
-        } catch (err) { console.error(err); }
         return;
     }
 

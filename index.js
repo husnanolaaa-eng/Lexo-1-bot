@@ -20,7 +20,7 @@ const client = new Client({
     ]
 });
 
-// Genişletilmiş Türkçe Küfür ve Hakaret Kök Listesi (Yanlış algılamaları önleyen temiz yapı)
+// Genişletilmiş Türkçe Küfür ve Hakaret Kök Listesi
 const blacklist = [
     'sikeyim', 'sikim', 'skem', 'sikem', 's1key1m', 's3k1m', 'sıkm', 'sik', 'siker',
     'oç', 'orospu', 'orospu evladı', 'orosph çocuğu', 'oc', '0ç',
@@ -33,6 +33,10 @@ const blacklist = [
 const spamKontrol = new Map();
 const emojiSpamKontrol = new Map();
 const uyariTakip = new Map();
+
+// Mahkeme logları ve saklanan dosyalar için bellek havuzu
+const mahkemeMesajlari = new Map(); // channelId -> mesajlar dizisi
+const saklananMahkemeler = new Map(); // saklanan dosyalar
 
 client.once('ready', () => {
     console.log(`[+] Bot aktif! Giriş yapılan hesap: ${client.user.tag}`);
@@ -52,7 +56,7 @@ client.on('guildMemberAdd', async member => {
 
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
-                .setCustomId('kabul_et')
+                .setCustomId(`kabul_et_${member.id}`)
                 .setLabel('✅ Kabul Ediyorum')
                 .setStyle(ButtonStyle.Success)
         );
@@ -63,12 +67,30 @@ client.on('guildMemberAdd', async member => {
     }
 });
 
+// --- ÜYE AYRILMASI ---
+client.on('guildMemberRemove', async member => {
+    try {
+        const chatKanali = member.guild.channels.cache.find(c => c.name.toLowerCase() === 'chat' || c.name.toLowerCase() === 'sohbet' || c.name.toLowerCase() === 'genel');
+        if (!chatKanali) return;
+
+        await chatKanali.send(`@${member.user.username} sunucudan ayrıldı 🙁`);
+    } catch (err) {
+        console.error('guildMemberRemove hatası:', err);
+    }
+});
+
 // --- BUTON ETKİLEŞİMLERİ ---
 client.on('interactionCreate', async interaction => {
     if (!interaction.isButton()) return;
 
     // 1. Kuralları Kabul Et Butonu
-    if (interaction.customId === 'kabul_et') {
+    if (interaction.customId.startsWith('kabul_et_')) {
+        const hedefUserId = interaction.customId.split('_')[2];
+
+        if (interaction.user.id !== hedefUserId) {
+            return interaction.reply({ content: '❌ Birinin adına karar vermeyin.', ephemeral: true });
+        }
+
         try {
             await interaction.deferUpdate();
             
@@ -86,6 +108,16 @@ client.on('interactionCreate', async interaction => {
         } catch (err) {
             console.error('Kabul et buton hatası:', err);
         }
+        return;
+    }
+
+    // 2. Mahkeme Arşiv Butonları (Sakla / Sil)
+    if (interaction.customId === 'mahkeme_sakla') {
+        await interaction.update({ content: 'MAHKEME SAKLANDI.', components: [] });
+        return;
+    }
+    if (interaction.customId === 'mahkeme_sil') {
+        await interaction.update({ content: 'Başarılı şekilde silindi.', components: [] });
         return;
     }
 
@@ -113,11 +145,9 @@ client.on('interactionCreate', async interaction => {
             await hedefUye.timeout(3 * 60 * 1000, 'Küfür sebebiyle log paneli üzerinden susturuldu.');
             await interaction.update({ content: `🔇 **${hedefUye.user.tag}** 3 dakika süreyle susturuldu! (İşlemi Yapan: ${interaction.user})`, components: [] });
 
-            // 3 dakika sonra Mute kaldırılacak ve DM atılacak
             setTimeout(async () => {
                 try {
                     await hedefUye.timeout(null, 'Mute süresi doldu.');
-                    
                     const sahip = guild.members.cache.find(m => m.user.username.toLowerCase() === 'cikomiko0787');
                     if (sahip) {
                         await sahip.send(`@${hedefUye.user.tag} kullanıcısının küfür sebebiyle atılan mute kaldırıldı.`);
@@ -137,22 +167,10 @@ client.on('interactionCreate', async interaction => {
                 name: `mahkeme-${hedefUye.user.username}`,
                 type: ChannelType.GuildText,
                 permissionOverwrites: [
-                    {
-                        id: guild.id,
-                        deny: [PermissionsBitField.Flags.ViewChannel]
-                    },
-                    {
-                        id: hedefUye.id,
-                        allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages]
-                    },
-                    {
-                        id: interaction.client.user.id,
-                        allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages]
-                    },
-                    ...(corumRolu ? [{
-                        id: corumRolu.id,
-                        allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages]
-                    }] : [])
+                    { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
+                    { id: hedefUye.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] },
+                    { id: interaction.client.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] },
+                    ...(corumRolu ? [{ id: corumRolu.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }] : [])
                 ]
             });
 
@@ -160,6 +178,9 @@ client.on('interactionCreate', async interaction => {
             if (sahip) {
                 await mahkemeKanali.permissionOverwrites.create(sahip.id, { ViewChannel: true, SendMessages: true });
             }
+
+            // Bu mahkeme için sohbet geçmişi kaydı başlat
+            mahkemeMesajlari.set(mahkemeKanali.id, []);
 
             await mahkemeKanali.send(`⚖️ **MAHKEME BAŞLATILDI!**\nSanık: ${hedefUye}\n\nKuralları ihlal eden bu kullanıcı ile sunucu sahibi @cikomiko0787 buradan görüşebilir.\nMahkemeyi bitirmek ve kanalı silmek için yetkili **.bitir** yazmalıdır.`);
             await interaction.update({ content: `⚖️ **${hedefUye.user.tag}** için mahkeme kanalı açıldı: ${mahkemeKanali} (İşlemi Yapan: ${interaction.user})`, components: [] });
@@ -195,6 +216,13 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
 client.on('messageCreate', async message => {
     if (!message.guild || message.author.bot) return;
 
+    // --- MAHKEME KANALINDAKİ MESAJLARI KAYDETME ---
+    if (message.channel.name.startsWith('mahkeme-')) {
+        const kayitlar = mahkemeMesajlari.get(message.channel.id) || [];
+        kayitlar.push(`[${new Date().toLocaleString()}] ${message.author.tag}: ${message.content}`);
+        mahkemeMesajlari.set(message.channel.id, kayitlar);
+    }
+
     // --- MAHKEME KANALINDA .bitir KOMUTU ---
     if (message.content.toLowerCase() === '.bitir' && message.channel.name.startsWith('mahkeme-')) {
         const corumVarmi = message.member.roles.cache.some(r => r.name.toLowerCase() === 'çorum');
@@ -203,12 +231,32 @@ client.on('messageCreate', async message => {
 
         if (adminMi || corumVarmi || isSahip) {
             try {
-                await message.channel.send('⚖️ Mahkeme sona erdi, kanal birazdan siliniyor...');
+                const tarih = new Date().toLocaleString();
+                const konusmalar = mahkemeMesajlari.get(message.channel.id) || ['Konuşma kaydı bulunamadı.'];
+                
+                const logChannel = message.guild.channels.cache.find(c => c.name.toLowerCase() === 'log');
+                if (logChannel) {
+                    const formatliMesajlar = konusmalar.join('\n');
+                    const mahkemeMetni = `MAHKEME GEÇMİŞİ\n\nŞU ${tarih} TARİHİNDE AÇILAN MAHKEME KANALINDA ŞU MESAJLAR YAZILDI:\n\n${formatliMesajlar}\n\nTÜRKÇE DİL KONUŞULMUŞTUR`;
+                    
+                    // Veriyi saklanan mahkemelere kaydet
+                    saklananMahkemeler.set('son_mahkeme', mahkemeMetni);
+
+                    const row = new ActionRowBuilder().addComponents(
+                        new ButtonBuilder().setCustomId('mahkeme_sakla').setLabel('BU MAHKEMEYİ SAKLA').setStyle(ButtonStyle.Success),
+                        new ButtonBuilder().setCustomId('mahkeme_sil').setLabel('BU MAHKEME DOSYASINI SİL').setStyle(ButtonStyle.Danger)
+                    );
+
+                    await logChannel.send({ content: mahkemeMetni, components: [row] });
+                }
+
+                mahkemeMesajlari.delete(message.channel.id);
+                await message.channel.send('⚖️ Mahkeme sona erdi, log kanalına rapor gönderildi ve kanal birazdan siliniyor...');
                 setTimeout(async () => {
                     await message.channel.delete().catch(() => {});
                 }, 3000);
             } catch (err) {
-                console.error('Mahkeme silme hatası:', err);
+                console.error('Mahkeme bitir hatası:', err);
             }
             return;
         } else {
@@ -272,7 +320,7 @@ client.on('messageCreate', async message => {
                 await message.delete();
                 if (!uyariTakip.has(userId)) {
                     uyariTakip.set(userId, true);
-                    await message.channel.send(`⚠️ ${message.author}, Flood ve spam yasaktır bir dahaki seferde mute yersiniz.`);
+                    await message.channel.send(`⚠️ ${message.author}, Flood dan spam yasaktır bir dahaki seferde mute yersiniz.`);
                 } else {
                     await message.member.timeout(3 * 60 * 1000, 'Emoji spam');
                     await message.channel.send(`⚠️ ${message.author}, spam yapmaya devam ettiği için 3 dakika süreyle susturuldu!`);
@@ -316,12 +364,15 @@ client.on('messageCreate', async message => {
         }
     }
 
-    // --- GELİŞTİRİLMİŞ TÜRKÇE KÜFÜR FİLTRESİ & BUTONLU LOG PANELİ ---
+    // --- KÜFÜR FİLTRESİ ---
     const komutMu = message.content.startsWith('.sesegir') || message.content.startsWith('.mute') || 
                     message.content.startsWith('.unmute') || message.content.startsWith('.nuke') || 
                     message.content.startsWith('!roller') || message.content.startsWith('!kurallar') ||
                     message.content.startsWith('.şikayet') || message.content.startsWith('.sikayet') ||
                     message.content.startsWith('.ship') || message.content.startsWith('.zekam') || 
+                    message.content.startsWith('.zeka') || message.content.startsWith('.kayıtmahkeme') ||
+                    message.content.startsWith('.bangeçmişi') || message.content.startsWith('.kickgeçmişi') ||
+                    message.content.startsWith('.susturmalar') || message.content.startsWith('.yardım') ||
                     message.content.startsWith('.bitir');
 
     if (!komutMu && !adminMi) {
@@ -381,77 +432,112 @@ client.on('messageCreate', async message => {
 
     // --- KOMUTLAR ---
 
-    // --- !roller KOMUTU (Sadece Çorum rolüne sahip olanlar kullanabilir) ---
-    if (message.content.startsWith('!roller')) {
-        try {
-            await message.delete().catch(() => {});
-
-            const corumVarmi = message.member.roles.cache.some(r => r.name.toLowerCase() === 'çorum');
-            const adminMi = message.member.permissions.has(PermissionsBitField.Flags.Administrator);
-
-            if (!corumVarmi && !adminMi) {
-                return message.reply('❌ Bu komutu sadece "çorum" rolüne sahip yetkililer kullanabilir!');
-            }
-
-            const rollerEmbed = new EmbedBuilder()
-                .setColor('#00ffcc')
-                .setTitle('🏅 AKTİF ÜYE ÖDÜLLERİ VE YETKİ KURALLARI')
-                .setDescription('Sunucumuzda 1.000 mesaj gönderen üyelere **nuke✅**, 2.000 mesaj gönderen üyelere ise **chatyt✅** rolü verilecektir. (Şimdilik.)\n\n---')
-                .addFields(
-                    { 
-                        name: '🔇 chatyt✅', 
-                        value: 'Bu role sahip olan üyeler, diğer üyeleri etiketleyerek susturma yetkisine sahiptir.\n' +
-                               '• Susturmak için: `.mute @kullanici`\n' +
-                               '• Susturmayı kaldırmak için: `.unmute @kullanici`\n' +
-                               'Susturma işleminin en az 3 dakika sürmesi gerekmektedir.\n' +
-                               'Bu yetki, sunucu içerisindeki düzeni korumak ve kurallara aykırı davranışlarda bulunan üyelerin gerekli durumlarda susturulmasını sağlamak amacıyla verilmiştir.\n' +
-                               'Kişisel anlaşmazlıklar, özel nedenler veya keyfî davranışlar sebebiyle susturma işlemi gerçekleştirmek kesinlikle yasaktır. Yetkinin kötüye kullanılması veya gereksiz yere kullanılması durumunda rolünüz geri alınacaktır.'
-                    },
-                    { 
-                        name: '💥 nuke✅', 
-                        value: 'Bu role sahip olan üyeler, yetkili oldukları kanallardaki mesajları silebilir.\n' +
-                               'Mesajları silmek istediğiniz kanala girmeniz ve sohbet kısmına `.nuke` yazmanız yeterlidir.\n' +
-                               'Ancak aynı kanalda art arda Nuke işlemi uygulayarak sohbet düzenini bozmak kesinlikle yasaktır. Bu yetki, gereksiz mesaj yoğunluğunu ve kanal kirliliğini gidermek amacıyla kullanılmalıdır.\n' +
-                               'Yetkinin gereksiz veya kötüye kullanılması durumunda rolünüz geri alınacaktır.'
-                    },
-                    { 
-                        name: '🔊 ses yt✅', 
-                        value: 'Bu role sahip olan üyeler, ses kanallarında sohbetin düzenini bozan, diğer üyeleri rahatsız eden veya ses kanalının işleyişini olumsuz etkileyen kullanıcıları susturabilir ya da sağırlaştırabilir.\n' +
-                               'Bu yetkiye sahip olabilmek için ses kanallarında toplam 50 saatlik aktiflik sağlamanız gerekmektedir. (Şimdilik.)\n' +
-                               'Kişisel anlaşmazlıklar, keyfî davranışlar veya herhangi bir geçerli sebep olmaksızın üyeleri susturmak ya da sağırlaştırmak kesinlikle yasaktır.'
-                    },
-                    { 
-                        name: '𝐋𝐄𝐁𝐋𝐄𝐁İ', 
-                        value: 'Bu role sahip olan üyelerin, sunucu içerisinde önemli bir duyuru veya gerçekten bütün üyelerin bilgilendirilmesini gerektiren bir durum olmadığı sürece `@everyone` etiketini kullanarak tüm sunucu üyelerini etiketlemesi yasaktır.\n' +
-                               '@everyone etiketi, bütün sunucu üyelerine bildirim gönderdiğinden yalnızca önemli ve gerekli durumlarda kullanılmalıdır. Gereksiz yere yapılan toplu etiketlemeler üyelerin rahatsız olmasına neden olur.'
-                    }
-                )
-                .setFooter({ text: 'Lexo Güvenlik ve Bilgilendirme Sistemi' })
-                .setTimestamp();
-
-            await message.channel.send({ embeds: [rollerEmbed] });
-        } catch (err) { 
-            console.error('Roller komut hatası:', err); 
+    // --- .kayıtmahkeme KOMUTU (Sadece log kanalında ve Çorum rollüler için) ---
+    if (message.content.startsWith('.kayıtmahkeme')) {
+        if (message.channel.name.toLowerCase() !== 'log') {
+            return message.reply('❌ Bu komut sadece **#log** kanalında kullanılabilir!');
         }
+        const corumV = message.member.roles.cache.some(r => r.name.toLowerCase() === 'çorum');
+        const adm = message.member.permissions.has(PermissionsBitField.Flags.Administrator);
+        if (!corumV && !adm) {
+            return message.reply('❌ Bu komutu sadece "çorum" rolüne sahip yetkililer kullanabilir!');
+        }
+
+        const saklanan = saklananMahkemeler.get('son_mahkeme');
+        if (!saklanan) {
+            return message.reply('❌ Saklanmış veya kayıtlı bir mahkeme dosyası bulunamadı!');
+        }
+
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('mahkeme_sakla').setLabel('BU MAHKEMEYİ SAKLA').setStyle(ButtonStyle.Success),
+            new ButtonBuilder().setCustomId('mahkeme_sil').setLabel('BU MAHKEME DOSYASINI SİL').setStyle(ButtonStyle.Danger)
+        );
+
+        await message.channel.send({ content: saklanan, components: [row] });
         return;
     }
 
-    // --- .zekam KOMUTU ---
+    // --- .yardım KOMUTU (Sadece log kanalında ve Çorum rollüler için) ---
+    if (message.content.startsWith('.yardım')) {
+        if (message.channel.name.toLowerCase() !== 'log') {
+            return message.reply('❌ Bu komut sadece **#log** kanalında kullanılabilir!');
+        }
+        const corumV = message.member.roles.cache.some(r => r.name.toLowerCase() === 'çorum');
+        const adm = message.member.permissions.has(PermissionsBitField.Flags.Administrator);
+        if (!corumV && !adm) {
+            return message.reply('❌ Bu komutu sadece "çorum" rolüne sahip yetkililer kullanabilir!');
+        }
+
+        await message.channel.send(
+            `Tabii efendim!\n\n` +
+            `**Noktalı (.) ve Ünlemli (!) Başlayan Tüm Komutlar:**\n` +
+            `• \`!roller\` - Aktif üye ödüllerini ve kurallarını listeler (Çorum özel).\n` +
+            `• \`!kurallar\` - Sunucu kurallarını ve onay butonunu gönderir.\n` +
+            `• \`.sesegir <kanal>\` - Botu ses kanalına sokar.\n` +
+            `• \`.mute @kullanici\` - Belirtilen üyeyi susturur.\n` +
+            `• \`.unmute @kullanici\` - Üyenin susturmasını kaldırır.\n` +
+            `• \`.nuke\` - Kanalı sıfırlar (Onay butonlu).\n` +
+            `• \`.şikayet / .sikayet\` - Şikayet bilgisi verir.\n` +
+            `• \`.ship @kullanici\` - Aşk testi yapar (Sadece #eğlence kanalında).\n` +
+            `• \`.zekam\` - IQ testi yapar (Sadece #eğlence kanalında).\n` +
+            `• \`.zeka\` - Sunucunun en zeki elemanını seçer (Sadece #eğlence kanalında).\n` +
+            `• \`.kayıtmahkeme\` - Saklanan mahkeme dosyasını getirir (Sadece #log kanalında).\n` +
+            `• \`.bangeçmişi\` - Ban kayıtlarını gösterir.\n` +
+            `• \`.kickgeçmişi\` - Kick kayıtlarını gösterir.\n` +
+            `• \`.susturmalar\` - Susturma kayıtlarını gösterir.\n` +
+            `• \`.yardım\` - Bu yardım menüsünü gösterir (Sadece #log kanalında).`
+        );
+        return;
+    }
+
+    // Diğer geçmiş komutları placeholder yanıtları
+    if (message.content.startsWith('.bangeçmişi') || message.content.startsWith('.kickgeçmişi') || message.content.startsWith('.susturmalar')) {
+        await message.reply('📂 Sunucu geçmiş kayıtları sistemi aktif.');
+        return;
+    }
+
+    // --- .zekam KOMUTU (Özel Kişi Torpilleri ve Şakaları Dahil) ---
     if (message.content.startsWith('.zekam')) {
+        if (message.channel.name.toLowerCase() !== 'eğlence' && message.channel.name.toLowerCase() !== 'eglence') {
+            return message.reply('❌ Bu komut sadece **#eğlence** kanalında kullanılabilir!');
+        }
         try {
             const targetUser = message.mentions.users.first() || message.author;
-            const iqPuani = Math.floor(Math.random() * 151);
+            const usernameLower = message.author.username.toLowerCase();
 
+            let iqPuani;
             let durumMesaji = "";
-            if (iqPuani >= 80) {
-                durumMesaji = `✨ Zeka fışkırıyor maşAllah mübarek!`;
-            } else {
-                durumMesaji = `💀 Beynin yok sanırım.`;
+            let ozelBaslik = "🧠 IQ TESTİ 🧠";
+            let embedRenk = '#2ed573';
+
+            // cikomiko0787 için %30 ihtimalle %700 IQ ve mor renkli MASTERMIND!
+            if (usernameLower === 'cikomiko0787' && Math.random() < 0.30) {
+                iqPuani = 700;
+                durumMesaji = `🔮 MASTERMIND!`;
+                ozelBaslik = "🧠 MASTERMIND IQ TESTİ 🧠";
+                embedRenk = '#9b59b6'; // Mor renk
+            } 
+            // mvn_zuid010 için sıkılıkla 0, 1, 2 veya bazen rastgele 100 üstü IQ
+            else if (usernameLower === 'mvn_zuid010') {
+                const ihtimal = Math.random();
+                if (ihtimal < 0.85) {
+                    iqPuani = Math.floor(Math.random() * 3); // 0, 1 veya 2
+                } else {
+                    iqPuani = Math.floor(Math.random() * 50) + 101; // 100 ile 150 arası
+                }
+                embedRenk = iqPuani >= 80 ? '#2ed573' : '#ff4757';
+                durumMesaji = iqPuani >= 80 ? `✨ Zeka fışkırıyor maşAllah mübarek!` : `💀 Beynin yok sanırım.`;
+            } 
+            // Normal kullanıcılar için standart akış
+            else {
+                iqPuani = Math.floor(Math.random() * 151);
+                embedRenk = iqPuani >= 80 ? '#2ed573' : '#ff4757';
+                durumMesaji = iqPuani >= 80 ? `✨ Zeka fışkırıyor maşAllah mübarek!` : `💀 Beynin yok sanırım.`;
             }
 
             const zekamEmbed = new EmbedBuilder()
-                .setColor(iqPuani >= 80 ? '#2ed573' : '#ff4757')
-                .setTitle('🧠 IQ TESTİ 🧠')
+                .setColor(embedRenk)
+                .setTitle(ozelBaslik)
                 .setDescription(`📊 **${targetUser.username}** adlı kişinin IQ Seviyesi: \`${iqPuani}\``)
                 .setThumbnail(targetUser.displayAvatarURL({ dynamic: true }))
                 .setImage('https://images.unsplash.com/photo-1507413245164-6160d8298b31?q=80&w=600&auto=format&fit=crop')
@@ -465,28 +551,45 @@ client.on('messageCreate', async message => {
         return;
     }
 
-    if (message.content.startsWith('!kurallar')) {
+    // --- .zeka KOMUTU (Sadece eğlence kanalında, gerçek üyeler arasından rastgele seçim) ---
+    if (message.content.startsWith('.zeka')) {
+        if (message.channel.name.toLowerCase() !== 'eğlence' && message.channel.name.toLowerCase() !== 'eglence') {
+            return message.reply('❌ Bu komut sadece **#eğlence** kanalında kullanılabilir!');
+        }
         try {
-            await message.delete().catch(() => {});
-            const row = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('kabul_et').setLabel('✅ Kabul Ediyorum').setStyle(ButtonStyle.Success)
-            );
-            await message.channel.send({ content: `📜 **SUNUCU KURALLARI**\n1. Saygı göster.\n2. Küfür etme.\n3. Reklam yapma.`, components: [row] });
-        } catch (err) { console.error(err); }
+            // Sunucudaki üyeleri önbelleğe alıp bot olmayanları filtreleyelim
+            await message.guild.members.fetch();
+            const gercekUyeler = message.guild.members.cache.filter(member => !member.user.bot);
+
+            if (gercekUyeler.size === 0) {
+                return message.reply('❌ Sunucuda seçilebilecek gerçek üye bulunamadı!');
+            }
+
+            // Rastgele bir gerçek üye seç
+            const rastgeleUyeArray = Array.from(gercekUyeler.values());
+            const secilenUye = rastgeleUyeArray[Math.floor(Math.random() * rastgeleUyeArray.length)];
+
+            const zekaEmbed = new EmbedBuilder()
+                .setColor('#f1c40f')
+                .setTitle('👑 SUNUCUNUN EN ZEKİ ELEMANI!')
+                .setDescription(`Sunucunun en zekisi ${secilenUye}'dır. Helal olsun ona!\n\n**MAŞALLAH.**`)
+                .setThumbnail(secilenUye.user.displayAvatarURL({ dynamic: true }))
+                .setImage('https://images.unsplash.com/photo-1567427017947-545c5f2d16ad?q=80&w=600&auto=format&fit=crop') // Başarı/Kupa temalı görsel
+                .setFooter({ text: 'Lexo Zeka Ligi 🏆' });
+
+            await message.channel.send({ embeds: [zekaEmbed] });
+        } catch (err) {
+            console.error('Zeka komut hatası:', err);
+            message.reply('❌ Zeka seçimi yapılırken bir hata oluştu!');
+        }
         return;
     }
 
-    // --- ŞİKAYET KOMUTU ---
-    if (message.content.startsWith('.şikayet') || message.content.startsWith('.sikayet')) {
-        try {
-            await message.delete().catch(() => {});
-            await message.channel.send(`Sunucumuzla ilgili herhangi bir şikâyetiniz varsa @cikomiko0787 kullanıcısına DM üzerinden ulaşarak şikâyetinizi iletebilirsiniz.`);
-        } catch (err) { console.error(err); }
-        return;
-    }
-
-    // --- .ship KOMUTU ---
+    // --- .ship KOMUTU (Sadece eğlence kanalında) ---
     if (message.content.startsWith('.ship')) {
+        if (message.channel.name.toLowerCase() !== 'eğlence' && message.channel.name.toLowerCase() !== 'eglence') {
+            return message.reply('❌ Bu komut sadece **#eğlence** kanalında kullanılabilir!');
+        }
         try {
             const targetUser = message.mentions.users.first();
             if (!targetUser) return message.reply('❌ Lütfen shiplemek için bir kullanıcı etiketle! Örnek: `.ship @kullanici`');
@@ -507,6 +610,64 @@ client.on('messageCreate', async message => {
         } catch (err) {
             console.error('Ship komut hatası:', err);
         }
+        return;
+    }
+
+    // --- !roller KOMUTU ---
+    if (message.content.startsWith('!roller')) {
+        try {
+            await message.delete().catch(() => {});
+
+            const corumVarmi = message.member.roles.cache.some(r => r.name.toLowerCase() === 'çorum');
+            const adminMi = message.member.permissions.has(PermissionsBitField.Flags.Administrator);
+
+            if (!corumVarmi && !adminMi) {
+                return message.reply('❌ Bu komutu sadece "çorum" rolüne sahip yetkililer kullanabilir!');
+            }
+
+            const rollerEmbed = new EmbedBuilder()
+                .setColor('#00ffcc')
+                .setTitle('🏅 AKTİF ÜYE ÖDÜLLERİ VE YETKİ KURALLARI')
+                .setDescription('Sunucumuzda 1.000 mesaj gönderen üyelere **nuke✅**, 2.000 mesaj gönderen üyelere ise **chatyt✅** rolü verilecektir. (Şimdilik.)\n\n---')
+                .addFields(
+                    { 
+                        name: '🔇 chatyt✅', 
+                        value: 'Bu role sahip olan üyeler, diğer üyeleri etiketleyerek susturma yetkisine sahiptir.\n' +
+                               '• Susturmak için: `.mute @kullanici`\n' +
+                               '• Susturmayı kaldırmak için: `.unmute @kullanici`'
+                    },
+                    { 
+                        name: '💥 nuke✅', 
+                        value: 'Bu role sahip olan üyeler, yetkili oldukları kanallardaki mesajları silebilir (.nuke).'
+                    }
+                )
+                .setFooter({ text: 'Lexo Güvenlik ve Bilgilendirme Sistemi' })
+                .setTimestamp();
+
+            await message.channel.send({ embeds: [rollerEmbed] });
+        } catch (err) { 
+            console.error('Roller komut hatası:', err); 
+        }
+        return;
+    }
+
+    if (message.content.startsWith('!kurallar')) {
+        try {
+            await message.delete().catch(() => {});
+            const row = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId(`kabul_et_${message.author.id}`).setLabel('✅ Kabul Ediyorum').setStyle(ButtonStyle.Success)
+            );
+            await message.channel.send({ content: `📜 **SUNUCU KURALLARI**\n1. Saygı göster.\n2. Küfür etme.\n3. Reklam yapma.`, components: [row] });
+        } catch (err) { console.error(err); }
+        return;
+    }
+
+    // --- ŞİKAYET KOMUTU ---
+    if (message.content.startsWith('.şikayet') || message.content.startsWith('.sikayet')) {
+        try {
+            await message.delete().catch(() => {});
+            await message.channel.send(`Sunucumuzla ilgili herhangi bir şikâyetiniz varsa @cikomiko0787 kullanıcısına DM üzerinden ulaşarak şikâyetinizi iletebilirsiniz.`);
+        } catch (err) { console.error(err); }
         return;
     }
 

@@ -6,7 +6,8 @@ const {
     ActionRowBuilder, 
     ButtonBuilder, 
     ButtonStyle,
-    EmbedBuilder 
+    EmbedBuilder,
+    Partials
 } = require('discord.js');
 const { joinVoiceChannel } = require('@discordjs/voice');
 
@@ -16,8 +17,10 @@ const client = new Client({
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.GuildMembers,
-        GatewayIntentBits.GuildVoiceStates
-    ]
+        GatewayIntentBits.GuildVoiceStates,
+        GatewayIntentBits.DirectMessages
+    ],
+    partials: [Partials.Channel, Partials.Message, Partials.User, Partials.GuildMember]
 });
 
 // Genişletilmiş Türkçe Küfür ve Hakaret Kök Listesi
@@ -37,6 +40,31 @@ const uyariTakip = new Map();
 // Mahkeme logları ve saklanan dosyalar için bellek havuzu
 const mahkemeMesajlari = new Map(); // channelId -> mesajlar dizisi
 const saklananMahkemeler = new Map(); // saklanan dosyalar
+
+// --- YENİ SİCİL VE ŞİKAYET VERİTABANI HAFIZASI ---
+const sicilVeritabani = new Map(); // userId -> sicil objesi
+const aktifSikayetler = new Map(); // şikayetEdenId -> şikayetEdilenId
+
+function getSicil(userId) {
+    if (!sicilVeritabani.has(userId)) {
+        sicilVeritabani.set(userId, {
+            mahkemeSayisi: 0,
+            uyarilar: [],
+            sikayetSayisi: 0,
+            susturmaSayisi: 0,
+            banSayisi: 0,
+            kickSayisi: 0,
+            alinanRoller: [],
+            cekilenRoller: [],
+            sesGirisSayisi: 0,
+            mesajSayisi: 0,
+            kufurSayisi: 0,
+            eglenceKomutlari: {},
+            gizliMi: false
+        });
+    }
+    return sicilVeritabani.get(userId);
+}
 
 client.once('ready', () => {
     console.log(`[+] Bot aktif! Giriş yapılan hesap: ${client.user.tag}`);
@@ -121,6 +149,61 @@ client.on('interactionCreate', async interaction => {
         return;
     }
 
+    // 3. SİCİL BUTONLARI (GEREKLİ İŞLEMLER / TEMİZLE / GİZLE)
+    if (interaction.customId.startsWith('sicil_islem_') || interaction.customId.startsWith('sicil_temizle_') || interaction.customId.startsWith('sicil_gizle_')) {
+        const parts = interaction.customId.split('_');
+        const aksiyon = parts[1];
+        const hedefId = parts[2];
+
+        const guild = interaction.guild;
+        if (!guild) return interaction.reply({ content: '❌ Bu işlem sadece sunucularda gerçekleştirilebilir.', ephemeral: true });
+
+        const member = await guild.members.fetch(interaction.user.id).catch(() => null);
+        const corumVarmi = member && member.roles.cache.some(r => r.name.toLowerCase() === 'çorum');
+        const adminMi = member && member.permissions.has(PermissionsBitField.Flags.Administrator);
+
+        if (!corumVarmi && !adminMi) {
+            return interaction.reply({ content: '❌ Bu butonları sadece "çorum" rolüne sahip olanlar kullanabilir!', ephemeral: true });
+        }
+
+        const hedefSicil = getSicil(hedefId);
+        const hedefUye = await guild.members.fetch(hedefId).catch(() => null);
+
+        if (aksiyon === 'gizle') {
+            hedefSicil.gizliMi = true;
+            return interaction.update({ content: `🔒 Bu kullanıcının sicili **GİZLİ** olarak ayarlandı. Artık sadece DM'den \`.sicil @kullanıcı\` ile görüntülenebilir.`, components: [] });
+        }
+
+        if (aksiyon === 'temizle') {
+            sicilVeritabani.set(hedefId, {
+                mahkemeSayisi: 0, uyarilar: [], sikayetSayisi: 0, susturmaSayisi: 0,
+                banSayisi: 0, kickSayisi: 0, alinanRoller: [], cekilenRoller: [],
+                sesGirisSayisi: 0, mesajSayisi: 0, kufurSayisi: 0, eglenceKomutlari: {}, gizliMi: false
+            });
+            return interaction.update({ content: `🧹 Kullanıcının sicili başarıyla **temizlendi**!`, components: [] });
+        }
+
+        if (aksiyon === 'islem') {
+            if (!hedefUye) {
+                return interaction.reply({ content: '❌ Kullanıcı sunucuda bulunamadı!', ephemeral: true });
+            }
+            try {
+                hedefSicil.banSayisi++;
+                await hedefUye.ban({ reason: "Yöneticiler tarafından banlanmıştır sebebi ise kırmızı sicile sahip olmasıdır." });
+                
+                const logKanal = guild.channels.cache.find(c => c.name.toLowerCase() === 'log');
+                if (logKanal) {
+                    await logKanal.send(`🚨 <@${hedefId}> yöneticiler tarafından banlanmıştır sebebi ise kırmızı sicile sahip olmasıdır.`);
+                }
+                return interaction.update({ content: `✅ Kullanıcı başarıyla banlandı ve log kanalına bildirildi.`, components: [] });
+            } catch (err) {
+                console.error('Sicil banlama hatası:', err);
+                return interaction.reply({ content: '❌ Kullanıcı banlanırken bir hata oluştu (Yetkim yetmiyor olabilir).', ephemeral: true });
+            }
+        }
+        return;
+    }
+
     // --- LOG KANALI CEZA BUTONLARI ---
     const [islem, hedefId] = interaction.customId.split('_');
     if (!['ban', 'kick', 'mute', 'mahkeme'].includes(islem)) return;
@@ -128,20 +211,24 @@ client.on('interactionCreate', async interaction => {
     try {
         const guild = interaction.guild;
         const hedefUye = await guild.members.fetch(hedefId).catch(() => null);
+        const hedefSicil = getSicil(hedefId);
 
         if (!hedefUye) {
             return interaction.reply({ content: '❌ Kullanıcı sunucuda bulunamadı veya ayrılmış.', ephemeral: true });
         }
 
         if (islem === 'ban') {
+            hedefSicil.banSayisi++;
             await hedefUye.ban({ reason: 'Küfür ve kural ihlali sebebiyle log paneli üzerinden banlandı.' });
             await interaction.update({ content: `🔨 **${hedefUye.user.tag}** sunucudan banlandı! (İşlemi Yapan: ${interaction.user})`, components: [] });
         } 
         else if (islem === 'kick') {
+            hedefSicil.kickSayisi++;
             await hedefUye.kick('Küfür sebebiyle log paneli üzerinden atıldı.');
             await interaction.update({ content: `👢 **${hedefUye.user.tag}** sunucudan atıldı! (İşlemi Yapan: ${interaction.user})`, components: [] });
         } 
         else if (islem === 'mute') {
+            hedefSicil.susturmaSayisi++;
             await hedefUye.timeout(3 * 60 * 1000, 'Küfür sebebiyle log paneli üzerinden susturuldu.');
             await interaction.update({ content: `🔇 **${hedefUye.user.tag}** 3 dakika süreyle susturuldu! (İşlemi Yapan: ${interaction.user})`, components: [] });
 
@@ -158,7 +245,9 @@ client.on('interactionCreate', async interaction => {
             }, 3 * 60 * 1000);
         } 
         else if (islem === 'mahkeme') {
+            hedefSicil.mahkemeSayisi++;
             const eskiRoller = hedefUye.roles.cache.map(r => r.id).filter(id => id !== guild.id);
+            hedefSicil.cekilenRoller.push(...hedefUye.roles.cache.filter(r => r.id !== guild.id).map(r => r.name));
             await hedefUye.roles.remove(eskiRoller).catch(() => {});
 
             const corumRolu = guild.roles.cache.find(r => r.name.toLowerCase() === 'çorum');
@@ -179,7 +268,6 @@ client.on('interactionCreate', async interaction => {
                 await mahkemeKanali.permissionOverwrites.create(sahip.id, { ViewChannel: true, SendMessages: true });
             }
 
-            // Bu mahkeme için sohbet geçmişi kaydı başlat
             mahkemeMesajlari.set(mahkemeKanali.id, []);
 
             await mahkemeKanali.send(`⚖️ **MAHKEME BAŞLATILDI!**\nSanık: ${hedefUye}\n\nKuralları ihlal eden bu kullanıcı ile sunucu sahibi @cikomiko0787 buradan görüşebilir.\nMahkemeyi bitirmek ve kanalı silmek için yetkili **.bitir** yazmalıdır.`);
@@ -198,6 +286,9 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
         if (!newState.channelId) return;
 
         const member = newState.member;
+        const sicil = getSicil(member.id);
+        sicil.sesGirisSayisi++;
+
         const adminMi = member.permissions.has(PermissionsBitField.Flags.Administrator);
         const rolVarmi = member.roles.cache.size > 1;
 
@@ -214,7 +305,48 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
 });
 
 client.on('messageCreate', async message => {
-    if (!message.guild || message.author.bot) return;
+    if (message.author.bot) return;
+
+    // --- ÖZEL (DM) MESAJLAR VE KOMUTLAR ---
+    if (!message.guild) {
+        const userId = message.author.id;
+        
+        // Kullanıcının herhangi bir sunucuda "çorum" rolü var mı kontrol edelim
+        let corumVarMiDM = false;
+        for (const [guildId, guild] of client.guilds.cache) {
+            const member = await guild.members.fetch(userId).catch(() => null);
+            if (member && member.roles.cache.some(r => r.name.toLowerCase() === 'çorum')) {
+                corumVarMiDM = true;
+                break;
+            }
+        }
+
+        if (!corumVarMiDM) {
+            return message.reply('❌ Bota özelden komut yazabilmek için "çorum" rolüne sahip olmalısın!');
+        }
+
+        const argsDM = message.content.trim().split(/ +/);
+        const cmdDM = argsDM.shift().toLowerCase();
+
+        if (cmdDM === '.yardım') {
+            await message.author.send(
+                `Tabii efendim!\n\n` +
+                `**DM Üzerinden Kullanabileceğin Tüm Komutlar:**\n` +
+                `• \`.yardım\` - Bu yardım menüsünü DM'e atar.\n` +
+                `• \`.sicil @kullanıcı\` - Hedef kullanıcının sicil dosyasını ve renkli durumunu gösterir.`
+            );
+            return message.reply('✅ Tüm komutlar DM olarak gönderildi.');
+        }
+
+        if (cmdDM === '.sicil') {
+            const hedefUser = message.mentions.users.first();
+            if (!hedefUser) {
+                return message.reply('❌ Lütfen siciline bakılacak kullanıcıyı etiketle! Örnek: `.sicil @kullanıcı`');
+            }
+            return gosterSicil(message, hedefUser, true);
+        }
+        return;
+    }
 
     // --- MAHKEME KANALINDAKİ MESAJLARI KAYDETME ---
     if (message.channel.name.startsWith('mahkeme-')) {
@@ -239,7 +371,6 @@ client.on('messageCreate', async message => {
                     const formatliMesajlar = konusmalar.join('\n');
                     const mahkemeMetni = `MAHKEME GEÇMİŞİ\n\nŞU ${tarih} TARİHİNDE AÇILAN MAHKEME KANALINDA ŞU MESAJLAR YAZILDI:\n\n${formatliMesajlar}\n\nTÜRKÇE DİL KONUŞULMUŞTUR`;
                     
-                    // Veriyi saklanan mahkemelere kaydet
                     saklananMahkemeler.set('son_mahkeme', mahkemeMetni);
 
                     const row = new ActionRowBuilder().addComponents(
@@ -373,7 +504,9 @@ client.on('messageCreate', async message => {
                     message.content.startsWith('.zeka') || message.content.startsWith('.kayıtmahkeme') ||
                     message.content.startsWith('.bangeçmişi') || message.content.startsWith('.kickgeçmişi') ||
                     message.content.startsWith('.susturmalar') || message.content.startsWith('.yardım') ||
-                    message.content.startsWith('.bitir');
+                    message.content.startsWith('.bitir') || message.content.startsWith('.yavaş') ||
+                    message.content.startsWith('.sicil') || message.content.startsWith('.uyar') ||
+                    message.content.startsWith('.şikayetliyim') || message.content.startsWith('.sikayetdoğru');
 
     if (!komutMu && !adminMi) {
         const kelimeler = message.content.toLowerCase()
@@ -397,6 +530,9 @@ client.on('messageCreate', async message => {
         }
 
         if (isProfane) {
+            const userSicilKayit = getSicil(message.author.id);
+            userSicilKayit.kufurSayisi++;
+
             try {
                 await message.delete();
                 await message.channel.send(`⚠️ ${message.author}, küfür etmek yasaktır!`);
@@ -430,7 +566,98 @@ client.on('messageCreate', async message => {
         }
     }
 
-    // --- KOMUTLAR ---
+    // Kullanıcının mesaj sayısını günlüğe işle
+    const userSicilGenel = getSicil(message.author.id);
+    userSicilGenel.mesajSayisi++;
+
+    // --- YENİ EKLENEN KOMUTLAR ---
+
+    // 1. .yavaş [1-5] KOMUTU
+    if (message.content.startsWith('.yavaş')) {
+        const hasYavasYetki = corumVarmi || message.member.roles.cache.some(r => r.name.toLowerCase() === 'chatyt✅' || r.name.toLowerCase() === '📿') || adminMi;
+        if (!hasYavasYetki) {
+            return message.reply('❌ Bu komutu kullanmak için `chatyt✅`, `çorum` veya `📿` rolüne sahip olmalısın!');
+        }
+
+        const args = message.content.trim().split(/ +/);
+        const sureStr = args[1];
+        const sure = parseInt(sureStr);
+
+        if (isNaN(sure) || sure < 1 || sure > 5) {
+            return message.reply('❌ Lütfen 1 ile 5 arasında bir süre belirtin! Örnek: `.yavaş 2` (Max sınır 5\'tir)');
+        }
+
+        try {
+            await message.channel.setRateLimitPerUser(sure);
+            return message.reply(`✅ Sohbet yavaşlatıldı! Artık mesajlar arasında **${sure} saniye** beklenmelidir.`);
+        } catch (err) {
+            console.error('Yavaş komut hatası:', err);
+            return message.reply('❌ Sohbet yavaşlatılırken bir hata oluştu!');
+        }
+    }
+
+    // 2. .uyar @kullanıcı [sebep] KOMUTU
+    if (message.content.startsWith('.uyar')) {
+        if (!corumVarmi && !adminMi) {
+            return message.reply('❌ Bu komutu yalnızca **çorum** rolüne sahip olanlar kullanabilir!');
+        }
+
+        const hedefUye = message.mentions.members.first();
+        const sebep = message.content.split(' ').slice(2).join(' ');
+
+        if (!hedefUye || !sebep) {
+            return message.reply('❌ Lütfen kullanıcıyı etiketleyin ve sebep yazın! Örnek: `.uyar @kullanici 2 kere arka arkaya küfür etti`');
+        }
+
+        const hedefSicil = getSicil(hedefUye.id);
+        hedefSicil.uyarilar.push({ sebep, tarih: new Date().toLocaleString(), yetkili: message.author.tag });
+
+        return message.reply({ content: `Etiketlenen kullanıcı başarılı şekilde uyarıldı.`, allowedMentions: { repliedUser: true } });
+    }
+
+    // 3. .şikayetliyim KOMUTU
+    if (message.content.startsWith('.şikayetliyim') || message.content.startsWith('.sikayetliyim')) {
+        const hedefUye = message.mentions.users.first();
+        if (!hedefUye) {
+            return message.reply('❌ Lütfen seni rahatsız eden kullanıcıyı etiketle! Örnek: `.şikayetliyim @kullanici`');
+        }
+
+        aktifSikayetler.set(message.author.id, hedefUye.id);
+        const hedefSicil = getSicil(hedefUye.id);
+        hedefSicil.sikayetSayisi++;
+
+        return message.reply({ content: `Lütfen herhangi bir yöneticiye kanıt atın.`, allowedMentions: { repliedUser: true } });
+    }
+
+    // 4. .sikayetdoğru KOMUTU
+    if (message.content.startsWith('.sikayetdoğru')) {
+        if (!corumVarmi && !adminMi) {
+            return message.reply('❌ Bu komut için **çorum** yetkisine sahip olmalısın!');
+        }
+
+        const hedefUye = message.mentions.users.first();
+        if (!hedefUye) {
+            return message.reply('❌ Şikayet edilen kullanıcıyı etiketlemelisin! Örnek: `.sikayetdoğru @kullanici`');
+        }
+
+        const hedefSicil = getSicil(hedefUye.id);
+        // Zaten şikayetliyim ile artmıştı, burada ekstra loglayabiliriz veya onaylayabiliriz.
+        return message.reply(`✅ Şikayet edilen @${hedefUye.tag} kullanıcısının siciline başarıyla işlendi ve onaylandı.`);
+    }
+
+    // 5. .sicil @kullanıcı KOMUTU (Log kanalında veya sunucuda)
+    if (message.content.startsWith('.sicil')) {
+        if (message.channel.name.toLowerCase() !== 'log' && !corumVarmi && !adminMi) {
+            return message.reply('❌ Bu komutu sunucuda yalnızca **#log** kanalında veya bota özelden yazabilirsin!');
+        }
+
+        const hedefUser = message.mentions.users.first();
+        if (!hedefUser) {
+            return message.reply('❌ Lütfen siciline bakılacak kullanıcıyı etiketle! Örnek: `.sicil @kullanıcı`');
+        }
+
+        return gosterSicil(message, hedefUser, false);
+    }
 
     // --- .kayıtmahkeme KOMUTU (Sadece log kanalında ve Çorum rollüler için) ---
     if (message.content.startsWith('.kayıtmahkeme')) {
@@ -477,14 +704,15 @@ client.on('messageCreate', async message => {
             `• \`.mute @kullanici\` - Belirtilen üyeyi susturur.\n` +
             `• \`.unmute @kullanici\` - Üyenin susturmasını kaldırır.\n` +
             `• \`.nuke\` - Kanalı sıfırlar (Onay butonlu).\n` +
-            `• \`.şikayet / .sikayet\` - Şikayet bilgisi verir.\n` +
+            `• \`.yavaş [1-5]\` - Sohbeti yavaşlatır (Max 5 sn).\n` +
+            `• \`.uyar @kullanici [sebep]\` - Kullanıcıyı uyarır ve sicile işler.\n` +
+            `• \`.sicil @kullanici\` - Kullanıcının renkli sicil dosyasını gösterir.\n` +
+            `• \`.şikayetliyim @kullanici\` - Şikayet bildirimi açar.\n` +
+            `• \`.sikayetdoğru @kullanici\` - Şikayeti onaylayıp sicile işler.\n` +
             `• \`.ship @kullanici\` - Aşk testi yapar (Sadece #eğlence kanalında).\n` +
             `• \`.zekam\` - IQ testi yapar (Sadece #eğlence kanalında).\n` +
             `• \`.zeka\` - Sunucunun en zeki elemanını seçer (Sadece #eğlence kanalında).\n` +
             `• \`.kayıtmahkeme\` - Saklanan mahkeme dosyasını getirir (Sadece #log kanalında).\n` +
-            `• \`.bangeçmişi\` - Ban kayıtlarını gösterir.\n` +
-            `• \`.kickgeçmişi\` - Kick kayıtlarını gösterir.\n` +
-            `• \`.susturmalar\` - Susturma kayıtlarını gösterir.\n` +
             `• \`.yardım\` - Bu yardım menüsünü gösterir (Sadece #log kanalında).`
         );
         return;
@@ -504,31 +732,30 @@ client.on('messageCreate', async message => {
         try {
             const targetUser = message.mentions.users.first() || message.author;
             const usernameLower = message.author.username.toLowerCase();
+            const sKayit = getSicil(message.author.id);
+            sKayit.eglenceKomutlari['.zekam'] = (sKayit.eglenceKomutlari['.zekam'] || 0) + 1;
 
             let iqPuani;
             let durumMesaji = "";
             let ozelBaslik = "🧠 IQ TESTİ 🧠";
             let embedRenk = '#2ed573';
 
-            // cikomiko0787 için %30 ihtimalle %700 IQ ve mor renkli MASTERMIND!
             if (usernameLower === 'cikomiko0787' && Math.random() < 0.30) {
                 iqPuani = 700;
                 durumMesaji = `🔮 MASTERMIND!`;
                 ozelBaslik = "🧠 MASTERMIND IQ TESTİ 🧠";
-                embedRenk = '#9b59b6'; // Mor renk
+                embedRenk = '#9b59b6';
             } 
-            // mvn_zuid010 için sıkılıkla 0, 1, 2 veya bazen rastgele 100 üstü IQ
             else if (usernameLower === 'mvn_zuid010') {
                 const ihtimal = Math.random();
                 if (ihtimal < 0.85) {
-                    iqPuani = Math.floor(Math.random() * 3); // 0, 1 veya 2
+                    iqPuani = Math.floor(Math.random() * 3);
                 } else {
-                    iqPuani = Math.floor(Math.random() * 50) + 101; // 100 ile 150 arası
+                    iqPuani = Math.floor(Math.random() * 50) + 101;
                 }
                 embedRenk = iqPuani >= 80 ? '#2ed573' : '#ff4757';
                 durumMesaji = iqPuani >= 80 ? `✨ Zeka fışkırıyor maşAllah mübarek!` : `💀 Beynin yok sanırım.`;
             } 
-            // Normal kullanıcılar için standart akış
             else {
                 iqPuani = Math.floor(Math.random() * 151);
                 embedRenk = iqPuani >= 80 ? '#2ed573' : '#ff4757';
@@ -551,13 +778,12 @@ client.on('messageCreate', async message => {
         return;
     }
 
-    // --- .zeka KOMUTU (Sadece eğlence kanalında, gerçek üyeler arasından rastgele seçim) ---
+    // --- .zeka KOMUTU ---
     if (message.content.startsWith('.zeka')) {
         if (message.channel.name.toLowerCase() !== 'eğlence' && message.channel.name.toLowerCase() !== 'eglence') {
             return message.reply('❌ Bu komut sadece **#eğlence** kanalında kullanılabilir!');
         }
         try {
-            // Sunucudaki üyeleri önbelleğe alıp bot olmayanları filtreleyelim
             await message.guild.members.fetch();
             const gercekUyeler = message.guild.members.cache.filter(member => !member.user.bot);
 
@@ -565,7 +791,6 @@ client.on('messageCreate', async message => {
                 return message.reply('❌ Sunucuda seçilebilecek gerçek üye bulunamadı!');
             }
 
-            // Rastgele bir gerçek üye seç
             const rastgeleUyeArray = Array.from(gercekUyeler.values());
             const secilenUye = rastgeleUyeArray[Math.floor(Math.random() * rastgeleUyeArray.length)];
 
@@ -574,7 +799,7 @@ client.on('messageCreate', async message => {
                 .setTitle('👑 SUNUCUNUN EN ZEKİ ELEMANI!')
                 .setDescription(`Sunucunun en zekisi ${secilenUye}'dır. Helal olsun ona!\n\n**MAŞALLAH.**`)
                 .setThumbnail(secilenUye.user.displayAvatarURL({ dynamic: true }))
-                .setImage('https://images.unsplash.com/photo-1567427017947-545c5f2d16ad?q=80&w=600&auto=format&fit=crop') // Başarı/Kupa temalı görsel
+                .setImage('https://images.unsplash.com/photo-1567427017947-545c5f2d16ad?q=80&w=600&auto=format&fit=crop')
                 .setFooter({ text: 'Lexo Zeka Ligi 🏆' });
 
             await message.channel.send({ embeds: [zekaEmbed] });
@@ -585,7 +810,7 @@ client.on('messageCreate', async message => {
         return;
     }
 
-    // --- .ship KOMUTU (Sadece eğlence kanalında) ---
+    // --- .ship KOMUTU ---
     if (message.content.startsWith('.ship')) {
         if (message.channel.name.toLowerCase() !== 'eğlence' && message.channel.name.toLowerCase() !== 'eglence') {
             return message.reply('❌ Bu komut sadece **#eğlence** kanalında kullanılabilir!');
@@ -593,6 +818,9 @@ client.on('messageCreate', async message => {
         try {
             const targetUser = message.mentions.users.first();
             if (!targetUser) return message.reply('❌ Lütfen shiplemek için bir kullanıcı etiketle! Örnek: `.ship @kullanici`');
+
+            const sK = getSicil(message.author.id);
+            sK.eglenceKomutlari['.ship'] = (sK.eglenceKomutlari['.ship'] || 0) + 1;
 
             const yuzde = Math.floor(Math.random() * 101);
             const user1 = message.author;
@@ -618,10 +846,10 @@ client.on('messageCreate', async message => {
         try {
             await message.delete().catch(() => {});
 
-            const corumVarmi = message.member.roles.cache.some(r => r.name.toLowerCase() === 'çorum');
-            const adminMi = message.member.permissions.has(PermissionsBitField.Flags.Administrator);
+            const corumVarmiR = message.member.roles.cache.some(r => r.name.toLowerCase() === 'çorum');
+            const adminMiR = message.member.permissions.has(PermissionsBitField.Flags.Administrator);
 
-            if (!corumVarmi && !adminMi) {
+            if (!corumVarmiR && !adminMiR) {
                 return message.reply('❌ Bu komutu sadece "çorum" rolüne sahip yetkililer kullanabilir!');
             }
 
@@ -702,6 +930,8 @@ client.on('messageCreate', async message => {
         if (!targetUser) return message.reply('❌ Kullanıcı etiketleyin!');
 
         try {
+            const tSicil = getSicil(targetUser.id);
+            tSicil.susturmaSayisi++;
             await targetUser.timeout(3 * 60 * 1000, 'Mutelendi');
             await message.channel.send(`✅ ${targetUser.user.username} susturuldu.`);
         } catch (err) { console.error(err); }
@@ -763,6 +993,69 @@ client.on('messageCreate', async message => {
         return;
     }
 });
+
+// --- SİCİL GÖSTERME FONKSİYONU ---
+async function gosterSicil(message, hedefUser, isDM) {
+    const sicil = getSicil(hedefUser.id);
+
+    if (sicil.gizliMi && !isDM) {
+        const uyariMesaji = "Bu kullanıcının sicili **GİZLİ** olarak ayarlanmıştır. Sadece DM üzerinden `.sicil @kullanıcı` komutu ile görüntülenebilir!";
+        return isDM ? message.author.send(uyariMesaji) : message.reply(uyariMesaji);
+    }
+
+    // Renk ve Seviye Belirleme Algoritması
+    let renkBaslik = "BEYAZ\nHarika tertemiz bir sicil";
+    let embedRenk = 0xFFFFFF;
+    const toplamCeza = sicil.uyarilar.length + sicil.mahkemeSayisi + sicil.susturmaSayisi + sicil.banSayisi + (sicil.kufurSayisi > 3 ? 2 : 0);
+
+    if (toplamCeza >= 8) {
+        renkBaslik = "SİYAH SİCİL\nAcil ban gerekir.";
+        embedRenk = 0x000000;
+    } else if (toplamCeza >= 5) {
+        renkBaslik = "KIRMIZI\nYönetici tarafından gözetim altında tutulması";
+        embedRenk = 0xFF0000;
+    } else if (toplamCeza >= 3) {
+        renkBaslik = "TURUNCU\nDüzeltilmesi gerek.";
+        embedRenk = 0xFFA500;
+    } else if (toplamCeza >= 1) {
+        renkBaslik = "YEŞİL\nGüzel bir sicil";
+        embedRenk = 0x008000;
+    }
+
+    // Eğlence komutları metnini düzenleyelim
+    const eglenceDetaylari = Object.entries(sicil.eglenceKomutlari)
+        .map(([komut, sayi]) => `${sayi} KERE ${komut.toUpperCase()} YAZDI`)
+        .join(', ') || 'Yok';
+
+    const embed = new EmbedBuilder()
+        .setTitle(`📜 ${hedefUser.tag} - SİCİL DOSYASI`)
+        .setColor(embedRenk)
+        .setDescription(
+            `**SİCİL DURUMU:**\n${renkBaslik}\n\n` +
+            `• Kaç kere mahkemeye çıkarıldı: **${sicil.mahkemeSayisi}**\n` +
+            `• Kaç kere uyarıldı: **${sicil.uyarilar.length}**\n` +
+            `• Kaç kere şikayet edildi: **${sicil.sikayetSayisi}**\n` +
+            `• Kaç kere susturuldu: **${sicil.susturmaSayisi}**\n` +
+            `• Kaç kere banlandı: **${sicil.banSayisi}**\n` +
+            `• Kaç kere kicklendi: **${sicil.kickSayisi}**\n` +
+            `• Alınan Roller: ${sicil.alinanRoller.length > 0 ? sicil.alinanRoller.join(', ') : 'Yok'}\n` +
+            `• Çekilen Roller: ${sicil.cekilenRoller.length > 0 ? sicil.cekilenRoller.join(', ') : 'Yok'}\n` +
+            `• Kaç kere sese girdi: **${sicil.sesGirisSayisi}**\n` +
+            `• Sohbet kanallarında kaç kere chat yaptı: **${sicil.mesajSayisi}**\n` +
+            `• Kaç kere küfür etti: **${sicil.kufurSayisi}**\n` +
+            `• Eğlence Komutları: ${eglenceDetaylari}`
+        )
+        .setTimestamp();
+
+    const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`sicil_islem_${hedefUser.id}`).setLabel('GEREKLİ İŞLEMLERİ UYGULA').setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId(`sicil_temizle_${hedefUser.id}`).setLabel('SİCİLİ TEMİZLE').setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId(`sicil_gizle_${hedefUser.id}`).setLabel('SİCİLİ GİZLE').setStyle(ButtonStyle.Secondary)
+    );
+
+    const targetChannel = isDM ? message.author : message.channel;
+    return targetChannel.send({ embeds: [embed], components: [row] });
+}
 
 // --- KEEP-ALIVE SUNUCUSU ---
 const http = require('http');

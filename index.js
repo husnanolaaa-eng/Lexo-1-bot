@@ -33,13 +33,8 @@ const blacklist = [
     'anani', 'anasi', 'ananin', '4n4n1', '4n4sı', 'anneniyi', 'annenisikeyim', 'ananinami'
 ];
 
-const spamKontrol = new Map();
-const emojiSpamKontrol = new Map();
-const uyariTakip = new Map();
-const mahkemeMesajlari = new Map(); 
-const saklananMahkemeler = new Map(); 
 const sicilVeritabani = new Map(); 
-const aktifSikayetler = new Map(); 
+const mahkemeMesajlari = new Map(); 
 const katilimZamanlari = new Map();
 
 function getSicil(userId) {
@@ -67,7 +62,6 @@ function getSicil(userId) {
             mahkemeKararlari: [],
             ozurSayisi: 0,
             gorusulenYetkililer: [],
-            eglenceKomutlari: {},
             gizliMi: false
         });
     }
@@ -128,6 +122,23 @@ client.on('guildMemberAdd', async member => {
     } catch (err) {
         console.error('guildMemberAdd hatası:', err);
     }
+});
+
+// Ban ve Kick Olaylarını Sicile İşleme
+client.on('guildBanAdd', async ban => {
+    const sicil = getSicil(ban.user.id);
+    sicil.banSayisi++;
+});
+
+client.on('guildMemberRemove', async member => {
+    try {
+        const auditLogs = await member.guild.fetchAuditLogs({ type: 20, limit: 1 }); // Kick log tipi
+        const kickLog = auditLogs.entries.first();
+        if (kickLog && kickLog.target.id === member.id && (Date.now() - kickLog.createdTimestamp < 5000)) {
+            const sicil = getSicil(member.id);
+            sicil.kickSayisi++;
+        }
+    } catch (e) {}
 });
 
 // Kanal ve Rol Silme Koruması (Mass-Delete)
@@ -451,7 +462,7 @@ client.on('interactionCreate', async interaction => {
                 sesGirisSesleri: [], sesGirisSayisi: 0, mesajSayisi: 0, kufurSayisi: 0,
                 unmuteSayisi: 0, nukeSayisi: 0, mesajSilmeSayisi: 0, takmaAdSayisi: 0,
                 everyoneSayisi: 0, kufurUyariSayisi: 0, mahkemeSozleri: [], mahkemeKararlari: [],
-                ozurSayisi: 0, gorusulenYetkililer: [], eglenceKomutlari: {}, gizliMi: false
+                ozurSayisi: 0, gorusulenYetkililer: [], gizliMi: false
             });
             return interaction.update({ content: `🧹 Sicil temizlendi!`, components: [] });
         }
@@ -493,17 +504,13 @@ client.on('messageCreate', async message => {
         if (cmdDM === '.yardım') {
             if (!isCiko) return message.reply('❌ Bu komutu sadece sunucu sahibi cikomiko0787 kullanabilir!');
             await message.author.send(
-                `Tabii efendim! İşte Lexo Botunun DM üzerinden ve sunucuda kullanabileceğiniz tüm . ve ! komutları ile detaylı açıklamaları:\n\n` +
-                `• \`.sicil <Discord ID>\`: Sunucudaki bir kullanıcının; kaç kez uyarıldığını, susturulduğunu, banlandığını, kicklendiğini, mahkemeye çıktığını, alınan/çekilen rollerini, sese girişlerini, şikayetlerini ve tüm sicil dökümünü renkli ve interaktif butonlarla listeler.\n` +
-                `• \`.mahkemearşiv\`: Sunucu sahibinin özelden yazarak belirli bir kullanıcının mahkeme arşivini detaylıca incelemesini sağlar.\n` +
-                `• \`.yavaş [0-5]\`: Bulunduğunuz sohbet kanalını belirtilen saniye kadar yavaşlatır.\n` +
-                `• \`.uyar @kullanıcı [sebep]\`: Bir kullanıcıyı belirttiğiniz sebeple uyarır ve doğrudan siciline işler.\n` +
-                `• \`.sesegir <kanal_adı>\`: Botun belirttiğiniz isimdeki ses kanalına giriş yapmasını sağlar.\n` +
-                `• \`.mute @kullanıcı\`: Belirtilen üyeyi 3 dakika süreyle susturur.\n` +
-                `• \`.unmute @kullanıcı\`: Susturulan üyenin cezasını erkenden kaldırır.\n` +
-                `• \`.nuke\`: Bulunulan kanalı tamamen sıfırlar ve klonunu oluşturur.\n` +
-                `• \`.zeka\`, \`.zekam\`, \`.ship\`: #eğlence kanalında çalışan eğlence komutları.\n` +
-                `• \`!kurallar\`, \`!roller\`: Kuralları ve rollerin açıklamasını gösterir.`
+                `Tabii efendim! İşte Lexo Botunun komutları:\n\n` +
+                `• \`.sicil <Discord ID>\`: Kullanıcının detaylı sicilini ve mevcut rollerini gösterir.\n` +
+                `• \`.mahkemearşiv\`: Mahkeme arşivini inceler.\n` +
+                `• \`.zeka\`: Sunucudan rastgele birini günün en zekisi seçer.\n` +
+                `• \`.zekam @kullanıcı\`: Etiketlenen kişinin zekasını beyin görseliyle ölçer.\n` +
+                `• \`.ship @kullanıcı\`: İki kişi arasında aşk uyumu test eder.\n` +
+                `• \`.kapış @kullanıcı1 @kullanıcı2\`: Boks kapışması başlatır ve rastgele galip seçer.`
             );
             return message.reply('✅ Detaylı yardım menüsü DM olarak gönderildi.');
         }
@@ -514,7 +521,9 @@ client.on('messageCreate', async message => {
             if (!hedefId) return message.reply('❌ Lütfen Discord ID yazın!');
             try {
                 const hedefUser = await client.users.fetch(hedefId);
-                return gosterSicil(message, hedefUser, true);
+                const guild = client.guilds.cache.first();
+                const hedefMember = guild ? await guild.members.fetch(hedefId).catch(() => null) : null;
+                return gosterSicil(message, hedefUser, hedefMember, true);
             } catch (e) {
                 return message.reply('❌ Kullanıcı bulunamadı!');
             }
@@ -602,7 +611,7 @@ client.on('messageCreate', async message => {
         sicil.mahkemeChatSayisi = (sicil.mahkemeChatSayisi || 0) + 1;
     }
 
-    // --- ŞİKAYET KONTROLÜ (cikomiko0787 log kanalına yazar) ---
+    // --- ŞİKAYET KONTROLÜ ---
     const isCikoMessage = message.author.username.toLowerCase().includes('cikomiko0787');
     if (isCikoMessage && message.channel.name.toLowerCase() === 'log') {
         if (msgContent.includes('şikayet ettiği')) {
@@ -621,19 +630,21 @@ client.on('messageCreate', async message => {
         }
     }
 
-    // --- EĞLENCE KOMUTLARI ---
-    if (msgContent.startsWith('.zeka') || msgContent.startsWith('.zekam') || msgContent.startsWith('.ship')) {
+    // --- EĞLENCE KOMUTLARI (SADECE #eğlence KANALI) ---
+    if (msgContent.startsWith('.zeka') || msgContent.startsWith('.zekam') || msgContent.startsWith('.ship') || msgContent.startsWith('.kapış')) {
         if (message.channel.name.toLowerCase() !== 'eğlence' && message.channel.name.toLowerCase() !== 'eglence') {
             return message.reply('❌ Bu komutlar sadece **#eğlence** kanalında kullanılabilir!');
         }
     }
 
-    if (msgContent.startsWith('.zeka')) {
+    // .zeka -> Sunucudan rastgele birini seçip sunucunun en zekisi ilan eder
+    if (msgContent === '.zeka') {
         await message.guild.members.fetch();
         const gercek = message.guild.members.cache.filter(m => !m.user.bot).random();
-        return message.channel.send(`👑 Sunucunun en zekisi: ${gercek}`);
+        return message.channel.send(`👑 Sunucunun en zeki elemanı: ${gercek}`);
     }
 
+    // .zekam @kullanıcı -> Etiketlenen kişiye reply atarak zekasını ölçer, beyin fotosu atar
     if (msgContent.startsWith('.zekam')) {
         const hedefUser = message.mentions.users.first() || message.author;
         const iq = (hedefUser.username.toLowerCase().includes('cikomiko0787')) ? 700 : Math.floor(Math.random() * 150);
@@ -648,6 +659,7 @@ client.on('messageCreate', async message => {
         return message.reply({ embeds: [embed] });
     }
 
+    // .ship @kullanıcı
     if (msgContent.startsWith('.ship')) {
         const hedef = message.mentions.users.first();
         if (!hedef) return message.reply('❌ Lütfen shiplemek için bir kullanıcı etiketle! Örnek: `.ship @kullanici`');
@@ -666,7 +678,25 @@ client.on('messageCreate', async message => {
         return message.channel.send({ embeds: [shipEmbed] });
     }
 
-    // --- YÖNETİM VE YETKİ KOMUTLARI (.yavaş, .sesegir, .mute, .unmute, .nuke, .uyar, .sicil) ---
+    // .kapış @kullanıcı1 @kullanıcı2
+    if (msgContent.startsWith('.kapış')) {
+        const etiketlenenler = message.mentions.users.toArray();
+        if (etiketlenenler.length < 2) {
+            return message.reply('❌ Lütfen iki kullanıcı etiketleyin! Örnek: `.kapış @kullanici1 @kullanici2`');
+        }
+
+        const kazanan = etiketlenenler[Math.floor(Math.random() * etiketlenenler.length)];
+
+        const kapisEmbed = new EmbedBuilder()
+            .setColor('#ffa502')
+            .setTitle('🥊 BOKS RİNGİ KAPIŞMASI 🥊')
+            .setDescription(`Bu kavganın galibi net **${kazanan}**’dir çok iyi dövüşüyor maşAllah. 🏆`)
+            .setImage('https://images.unsplash.com/photo-1517649763962-0c623066013b?q=80&w=600&auto=format&fit=crop');
+
+        return message.channel.send({ embeds: [kapisEmbed] });
+    }
+
+    // --- YÖNETİM VE YETKİ KOMUTLARI ---
     if (msgContent.startsWith('.yavaş')) {
         if (!corumVarmi && !message.member.roles.cache.some(r => r.name.toLowerCase() === 'chatyt✅' || r.name.toLowerCase() === '📿') && !adminMi) return message.reply('❌ Yetkiniz yok!');
         const sure = parseInt(msgContent.trim().split(/ +/)[1]);
@@ -676,7 +706,7 @@ client.on('messageCreate', async message => {
     }
 
     if (msgContent.startsWith('.sesegir')) {
-        if (!adminMi && !rolVarmi) return message.reply('❌ Yetkiniz yok!');
+        if (!adminMi && !corumVarmi) return message.reply('❌ Yetkiniz yok!');
         const kanalAdi = msgContent.slice('.sesegir'.length).trim();
         const hedefKanal = message.guild.channels.cache.find(c => c.name.toLowerCase() === kanalAdi.toLowerCase() && c.type === ChannelType.GuildVoice);
         if (!hedefKanal) return message.reply('❌ Bulunamadı!');
@@ -740,7 +770,7 @@ client.on('messageCreate', async message => {
             if (i.customId === 'nuke_evet') {
                 await i.update({ content: '🔥 Kanal nuke’leniyor...', components: [] });
                 try {
-                    getSicil(message.author.id).nukeSayisi++;
+                    getSicil(message.author.id).nukeSayisi++; // Nuke sayısı anında güncellenir
                     const position = message.channel.position;
                     const newChannel = await message.channel.clone({ position: position });
                     await message.channel.delete();
@@ -756,9 +786,19 @@ client.on('messageCreate', async message => {
     }
 });
 
-async function gosterSicil(message, hedefUser, isDM) {
+// --- DETAYLI SİCİL GÖSTERME FONKSİYONU ---
+async function gosterSicil(message, hedefUser, hedefMember, isDM) {
     const sicil = getSicil(hedefUser.id);
     if (sicil.gizliMi && !isDM) return message.reply('Bu kullanıcının sicili gizlidir.');
+
+    // Anlık mevcut rollerini çekiyoruz
+    let mevcutRoller = "Rolü yok";
+    if (hedefMember && hedefMember.roles) {
+        mevcutRoller = hedefMember.roles.cache
+            .filter(r => r.id !== message.guild.id)
+            .map(r => r.name)
+            .join(', ') || "Rolü yok";
+    }
 
     let renkBaslik = "BEYAZ\nHarika tertemiz bir sicil";
     let embedRenk = 0xFFFFFF;
@@ -775,6 +815,7 @@ async function gosterSicil(message, hedefUser, isDM) {
         .setDescription(
             `**SİCİL DURUMU:**\n${renkBaslik}\n\n` +
             `• Discord ID: \`${hedefUser.id}\`\n` +
+            `• Mevcut Rolleri: **${mevcutRoller}**\n` +
             `• Bir yetkili tarafından kaç kere uyarıldığı: **${sicil.uyarilar.length}**\n` +
             `• Sunucuda kaç kere susturulduğu: **${sicil.susturmaSayisi}**\n` +
             `• Kaç tane rol aldığı: **${sicil.alinanRoller.length}** (${sicil.alinanRoller.join(', ') || 'Yok'})\n` +

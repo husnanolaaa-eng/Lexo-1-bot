@@ -280,6 +280,7 @@ client.on('interactionCreate', async interaction => {
         return interaction.update({ content: '🔨 Kullanıcı banlandı.', components: [] });
     }
 
+    // ŞİKAYET DOĞRU / YANLIŞ BUTONLARI (SADECE ÇORUM ROLÜ)
     if (interaction.customId.startsWith('sikayet_evet_') || interaction.customId.startsWith('sikayet_hayir_')) {
         const parts = interaction.customId.split('_');
         const karar = parts[1];
@@ -479,15 +480,17 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
 client.on('messageCreate', async message => {
     if (message.author.bot) return;
 
+    // --- GÜVENLİ MESSAGE CONTENT KONTROLÜ (TRIM HATASINI ÖNLER) ---
+    const msgContent = message.content || '';
+
     // --- ÖZEL (DM) MESAJLAR VE .yardım / .sicil / .MAHKEMEARŞİV ---
     if (!message.guild) {
         const userId = message.author.id;
         const isCiko = message.author.username.toLowerCase().includes('cikomiko0787');
 
-        const argsDM = message.content.trim().split(/ +/);
+        const argsDM = msgContent.trim().split(/ +/);
         const cmdDM = argsDM.shift().toLowerCase();
 
-        // 1. cikomiko0787 DM'den .yardım yazarsa tüm komutları uzun uzun açıklar
         if (cmdDM === '.yardım') {
             if (!isCiko) return message.reply('❌ Bu komutu sadece sunucu sahibi cikomiko0787 kullanabilir!');
             await message.author.send(
@@ -511,7 +514,6 @@ client.on('messageCreate', async message => {
             return message.reply('✅ Detaylı yardım menüsü DM olarak gönderildi.');
         }
 
-        // 2. .sicil <Discord ID>
         if (cmdDM === '.sicil') {
             if (!isCiko) return message.reply('❌ Bu komutu sadece cikomiko0787 kullanabilir!');
             const hedefId = argsDM[0];
@@ -524,7 +526,6 @@ client.on('messageCreate', async message => {
             }
         }
 
-        // 3. .MAHKEMEARŞİV
         if (cmdDM === '.mahkemearşiv' || cmdDM === '.mahkemearşivi') {
             if (!isCiko) return message.reply('❌ Bu komutu sadece cikomiko0787 kullanabilir!');
             
@@ -564,7 +565,7 @@ client.on('messageCreate', async message => {
     const adminMi = message.member.permissions.has(PermissionsBitField.Flags.Administrator);
     const corumVarmi = message.member.roles.cache.some(r => r.name.toLowerCase() === 'çorum');
 
-    const kelimeler = message.content.toLowerCase().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, " ").split(/\s+/);
+    const kelimeler = msgContent.toLowerCase().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, " ").split(/\s+/);
     let isProfane = false;
     for (let kelime of kelimeler) {
         let temizKelime = kelime.replace(/4/g, 'a').replace(/3/g, 'e').replace(/1/g, 'i').replace(/0/g, 'o').replace(/5/g, 's');
@@ -592,7 +593,7 @@ client.on('messageCreate', async message => {
                          `• Discord ID: \`${message.author.id}\`\n` +
                          `• Kanal: ${message.channel}\n` +
                          `• Zaman: ${new Date().toLocaleString()}\n` +
-                         `• Küfür: ||${message.content}||`,
+                         `• Küfür: ||${msgContent}||`,
                 components: [kufurRow]
             });
         }
@@ -603,15 +604,15 @@ client.on('messageCreate', async message => {
 
     if (message.channel.name.startsWith('mahkeme-')) {
         const sicil = getSicil(message.author.id);
-        sicil.mahkemeSozleri.push(`[${new Date().toLocaleTimeString()}] ${message.author.tag}: ${message.content}`);
+        sicil.mahkemeSozleri.push(`[${new Date().toLocaleTimeString()}] ${message.author.tag}: ${msgContent}`);
         sicil.mahkemeChatSayisi = (sicil.mahkemeChatSayisi || 0) + 1;
     }
 
+    // --- CİKOMİKO0787 ŞİKAYET FORMATI ALGORİTMASI ---
     const isCikoMessage = message.author.username.toLowerCase().includes('cikomiko0787');
     if (isCikoMessage && message.channel.name.toLowerCase() === 'log') {
-        const content = message.content.trim();
-        if (content.includes('şikayet ettiği')) {
-            const parcalar = content.split(/shike?yet ettiği/i);
+        if (msgContent.includes('şikayet ettiği')) {
+            const parcalar = msgContent.split(/şike?yet ettiği/i);
             const sikayetEdenId = parcalar[0].trim();
             const hedefId = parcalar[1].trim();
 
@@ -627,19 +628,19 @@ client.on('messageCreate', async message => {
     }
 
     // --- KOMUTLAR ---
-    if (message.content.startsWith('.zeka') || message.content.startsWith('.zekam') || message.content.startsWith('.ship')) {
+    if (msgContent.startsWith('.zeka') || msgContent.startsWith('.zekam') || msgContent.startsWith('.ship')) {
         if (message.channel.name.toLowerCase() !== 'eğlence' && message.channel.name.toLowerCase() !== 'eglence') {
             return message.reply('❌ Bu komutlar sadece **#eğlence** kanalında kullanılabilir!');
         }
     }
 
-    if (message.content.startsWith('.zeka')) {
+    if (msgContent.startsWith('.zeka')) {
         await message.guild.members.fetch();
         const gercek = message.guild.members.cache.filter(m => !m.user.bot).random();
         return message.channel.send(`👑 Sunucunun en zekisi: ${gercek}`);
     }
 
-    if (message.content.startsWith('.zekam')) {
+    if (msgContent.startsWith('.zekam')) {
         const hedefUser = message.mentions.users.first() || message.author;
         const iq = (hedefUser.username.toLowerCase().includes('cikomiko0787')) ? 700 : Math.floor(Math.random() * 150);
         
@@ -653,7 +654,7 @@ client.on('messageCreate', async message => {
         return message.reply({ embeds: [embed] });
     }
 
-    if (message.content.startsWith('.ship')) {
+    if (msgContent.startsWith('.ship')) {
         const hedef = message.mentions.users.first();
         if (!hedef) return message.reply('❌ Lütfen shiplemek için bir kullanıcı etiketle! Örnek: `.ship @kullanici`');
 
@@ -671,17 +672,17 @@ client.on('messageCreate', async message => {
         return message.channel.send({ embeds: [shipEmbed] });
     }
 
-    if (message.content.startsWith('.yavaş')) {
+    if (msgContent.startsWith('.yavaş')) {
         if (!corumVarmi && !message.member.roles.cache.some(r => r.name.toLowerCase() === 'chatyt✅' || r.name.toLowerCase() === '📿') && !adminMi) return message.reply('❌ Yetkiniz yok!');
-        const sure = parseInt(message.content.trim().split(/ +/)[1]);
+        const sure = parseInt(msgContent.trim().split(/ +/)[1]);
         if (isNaN(sure) || sure < 0 || sure > 5) return message.reply('❌ 0 ile 5 arasında girin!');
         await message.channel.setRateLimitPerUser(sure);
         return message.reply(sure === 0 ? '✅ Yavaş mod kaldırıldı.' : `✅ Yavaş mod ${sure} saniye yapıldı.`);
     }
 
-    if (message.content.startsWith('.sesegir')) {
+    if (msgContent.startsWith('.sesegir')) {
         if (!adminMi && !rolVarmi) return message.reply('❌ Yetkiniz yok!');
-        const kanalAdi = message.content.slice('.sesegir'.length).trim();
+        const kanalAdi = msgContent.slice('.sesegir'.length).trim();
         const hedefKanal = message.guild.channels.cache.find(c => c.name.toLowerCase() === kanalAdi.toLowerCase() && c.type === ChannelType.GuildVoice);
         if (!hedefKanal) return message.reply('❌ Bulunamadı!');
         joinVoiceChannel({ channelId: hedefKanal.id, guildId: message.guild.id, adapterCreator: message.guild.voiceAdapterCreator });

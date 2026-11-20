@@ -719,3 +719,25 @@ const server = http.createServer((req, res) => { res.writeHead(200); res.end('Le
 server.listen(process.env.PORT || 3000);
 
 client.login(process.env.DISCORD_TOKEN);
+
+if (message.content.startsWith('.sesegir')) {
+    try {
+        if (!adminMi && !rolVarmi) return message.reply('❌ Kuralları onaylamadığınız için sese giremezsiniz.');
+        const kanalAdi = message.content.slice('.sesegir'.length).trim();
+        if (!kanalAdi) return message.reply('❌ Kanal adı yazın!');
+
+        const hedefKanal = message.guild.channels.cache.find(c => c.name.toLowerCase() === kanalAdi.toLowerCase() && c.type === ChannelType.GuildVoice);
+        if (!hedefKanal) return message.reply('❌ Kanal bulunamadı!');
+
+        joinVoiceChannel({
+            channelId: hedefKanal.id,
+            guildId: message.guild.id,
+            adapterCreator: message.guild.voiceAdapterCreator,
+            selfMute: false,
+            selfDeaf: false
+        });
+        await message.channel.send('✅ Sese girildi.');
+    } catch (err) { console.error(err); }
+    return;
+}
+

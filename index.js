@@ -480,10 +480,9 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
 client.on('messageCreate', async message => {
     if (message.author.bot) return;
 
-    // --- GÜVENLİ MESSAGE CONTENT KONTROLÜ (TRIM HATASINI ÖNLER) ---
     const msgContent = message.content || '';
 
-    // --- ÖZEL (DM) MESAJLAR VE .yardım / .sicil / .MAHKEMEARŞİV ---
+    // --- ÖZEL (DM) MESAJLAR ---
     if (!message.guild) {
         const userId = message.author.id;
         const isCiko = message.author.username.toLowerCase().includes('cikomiko0787');
@@ -496,20 +495,15 @@ client.on('messageCreate', async message => {
             await message.author.send(
                 `Tabii efendim! İşte Lexo Botunun DM üzerinden ve sunucuda kullanabileceğiniz tüm . ve ! komutları ile detaylı açıklamaları:\n\n` +
                 `• \`.sicil <Discord ID>\`: Sunucudaki bir kullanıcının; kaç kez uyarıldığını, susturulduğunu, banlandığını, kicklendiğini, mahkemeye çıktığını, alınan/çekilen rollerini, sese girişlerini, şikayetlerini ve tüm sicil dökümünü renkli ve interaktif butonlarla listeler.\n` +
-                `• \`.mahkemearşiv\`: Sunucu sahibinin özelden yazarak belirli bir kullanıcının mahkeme arşivini (giriş saati, mahkemedeki konuşmaları, verilen kararları, özür sayısını ve görüştüğü yetkilileri) detaylıca incelemesini sağlar.\n` +
-                `• \`.yavaş [0-5]\`: Bulunduğunuz sohbet kanalını belirtilen saniye kadar yavaşlatır. '0' yazılırsa yavaş mod tamamen kaldırılır.\n` +
+                `• \`.mahkemearşiv\`: Sunucu sahibinin özelden yazarak belirli bir kullanıcının mahkeme arşivini detaylıca incelemesini sağlar.\n` +
+                `• \`.yavaş [0-5]\`: Bulunduğunuz sohbet kanalını belirtilen saniye kadar yavaşlatır.\n` +
                 `• \`.uyar @kullanıcı [sebep]\`: Bir kullanıcıyı belirttiğiniz sebeple uyarır ve doğrudan siciline işler.\n` +
-                `• \`.şikayetliyim @kullanıcı\`: Bir üyeden şikayetçi olduğunuzda süreci başlatır ve yetkililerden kanıt istemesini sağlar.\n` +
-                `• \`.sikayetdoğru @kullanıcı\`: Şikayeti onaylayarak şikayet edilen kişiyi özel mahkeme kanalına çıkarır.\n` +
                 `• \`.sesegir <kanal_adı>\`: Botun belirttiğiniz isimdeki ses kanalına giriş yapmasını sağlar.\n` +
                 `• \`.mute @kullanıcı\`: Belirtilen üyeyi 3 dakika süreyle susturur.\n` +
                 `• \`.unmute @kullanıcı\`: Susturulan üyenin cezasını erkenden kaldırır.\n` +
-                `• \`.nuke\`: Bulunulan kanalı tamamen sıfırlar ve klonunu oluşturur (Onay butonludur).\n` +
-                `• \`.zeka\`: #eğlence kanalında botlar hariç sunucudan rastgele birini seçerek günün en zekisi ilan eder.\n` +
-                `• \`.zekam @kullanıcı\`: #eğlence kanalında kişiye özel IQ testi yapar ve resimli beyin kartı gönderir.\n` +
-                `• \`.ship @kullanıcı\`: #eğlence kanalında iki kullanıcı arasında rastgele aşk ve uyum yüzdesi hesaplayıp görsel kart oluşturur.\n` +
-                `• \`!kurallar\`: Sunucu kurallarını gönderir ve altına '✅ Kabul Ediyorum' butonu yerleştirir.\n` +
-                `• \`!roller\`: Aktif üye ödüllerini ve yetki kurallarını listeler.`
+                `• \`.nuke\`: Bulunulan kanalı tamamen sıfırlar ve klonunu oluşturur.\n` +
+                `• \`.zeka\`, \`.zekam\`, \`.ship\`: #eğlence kanalında çalışan eğlence komutları.\n` +
+                `• \`!kurallar\`, \`!roller\`: Kuralları ve rollerin açıklamasını gösterir.`
             );
             return message.reply('✅ Detaylı yardım menüsü DM olarak gönderildi.');
         }
@@ -608,7 +602,7 @@ client.on('messageCreate', async message => {
         sicil.mahkemeChatSayisi = (sicil.mahkemeChatSayisi || 0) + 1;
     }
 
-    // --- CİKOMİKO0787 ŞİKAYET FORMATI ALGORİTMASI ---
+    // --- ŞİKAYET KONTROLÜ (cikomiko0787 log kanalına yazar) ---
     const isCikoMessage = message.author.username.toLowerCase().includes('cikomiko0787');
     if (isCikoMessage && message.channel.name.toLowerCase() === 'log') {
         if (msgContent.includes('şikayet ettiği')) {
@@ -627,7 +621,7 @@ client.on('messageCreate', async message => {
         }
     }
 
-    // --- KOMUTLAR ---
+    // --- EĞLENCE KOMUTLARI ---
     if (msgContent.startsWith('.zeka') || msgContent.startsWith('.zekam') || msgContent.startsWith('.ship')) {
         if (message.channel.name.toLowerCase() !== 'eğlence' && message.channel.name.toLowerCase() !== 'eglence') {
             return message.reply('❌ Bu komutlar sadece **#eğlence** kanalında kullanılabilir!');
@@ -672,6 +666,7 @@ client.on('messageCreate', async message => {
         return message.channel.send({ embeds: [shipEmbed] });
     }
 
+    // --- YÖNETİM VE YETKİ KOMUTLARI (.yavaş, .sesegir, .mute, .unmute, .nuke, .uyar, .sicil) ---
     if (msgContent.startsWith('.yavaş')) {
         if (!corumVarmi && !message.member.roles.cache.some(r => r.name.toLowerCase() === 'chatyt✅' || r.name.toLowerCase() === '📿') && !adminMi) return message.reply('❌ Yetkiniz yok!');
         const sure = parseInt(msgContent.trim().split(/ +/)[1]);
@@ -687,6 +682,77 @@ client.on('messageCreate', async message => {
         if (!hedefKanal) return message.reply('❌ Bulunamadı!');
         joinVoiceChannel({ channelId: hedefKanal.id, guildId: message.guild.id, adapterCreator: message.guild.voiceAdapterCreator });
         return message.channel.send('✅ Sese girildi.');
+    }
+
+    if (msgContent.startsWith('.mute')) {
+        const chatytRolu = message.guild.roles.cache.find(r => r.name.toLowerCase() === 'chatyt✅');
+        const corumRolu = message.guild.roles.cache.find(r => r.name.toLowerCase() === 'çorum');
+        const yetki = adminMi || (chatytRolu && message.member.roles.cache.has(chatytRolu.id)) || (corumRolu && message.member.roles.cache.has(corumRolu.id));
+
+        if (!yetki) return message.reply('❌ Yetkiniz yok!');
+        const targetUser = message.mentions.members.first();
+        if (!targetUser) return message.reply('❌ Kullanıcı etiketleyin!');
+
+        try {
+            getSicil(targetUser.id).susturmaSayisi++;
+            await targetUser.timeout(3 * 60 * 1000, 'Mutelendi');
+            return message.channel.send(`✅ ${targetUser.user.username} susturuldu.`);
+        } catch (err) { console.error(err); }
+    }
+
+    if (msgContent.startsWith('.unmute')) {
+        const chatytRolu = message.guild.roles.cache.find(r => r.name.toLowerCase() === 'chatyt✅');
+        const corumRolu = message.guild.roles.cache.find(r => r.name.toLowerCase() === 'çorum');
+        const yetki = adminMi || (chatytRolu && message.member.roles.cache.has(chatytRolu.id)) || (corumRolu && message.member.roles.cache.has(corumRolu.id));
+
+        if (!yetki) return message.reply('❌ Yetkiniz yok!');
+        const targetUser = message.mentions.members.first();
+        if (!targetUser) return message.reply('❌ Kullanıcı etiketleyin!');
+
+        try {
+            getSicil(targetUser.id).unmuteSayisi++;
+            await targetUser.timeout(null, 'Açıldı');
+            return message.channel.send(`✅ ${targetUser.user.username} susturması kaldırıldı.`);
+        } catch (err) { console.error(err); }
+    }
+
+    if (msgContent.startsWith('.nuke')) {
+        const nukeRolu = message.guild.roles.cache.find(r => r.name.toLowerCase() === 'nuke✅');
+        const corumRolu = message.guild.roles.cache.find(r => r.name.toLowerCase() === 'çorum');
+        const yetki = adminMi || (nukeRolu && message.member.roles.cache.has(nukeRolu.id)) || (corumRolu && message.member.roles.cache.has(corumRolu.id));
+
+        if (!yetki) return message.reply('❌ Yetkiniz yok!');
+
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('nuke_evet').setLabel('Evet, Sıfırla').setStyle(ButtonStyle.Danger),
+            new ButtonBuilder().setCustomId('nuke_hayir').setLabel('İptal').setStyle(ButtonStyle.Secondary)
+        );
+
+        const confirmMsg = await message.channel.send({
+            content: `⚠️ ${message.author}, bu kanalı sıfırlamak istediğine emin misin?`,
+            components: [row]
+        });
+
+        const filter = i => i.user.id === message.author.id;
+        const collector = confirmMsg.createMessageComponentCollector({ filter, time: 20000 });
+
+        collector.on('collect', async i => {
+            if (i.customId === 'nuke_evet') {
+                await i.update({ content: '🔥 Kanal nuke’leniyor...', components: [] });
+                try {
+                    getSicil(message.author.id).nukeSayisi++;
+                    const position = message.channel.position;
+                    const newChannel = await message.channel.clone({ position: position });
+                    await message.channel.delete();
+                    await newChannel.send(`✅ Kanal ${message.author} tarafından sıfırlandı.`);
+                } catch (err) {
+                    console.error(err);
+                }
+            } else {
+                await i.update({ content: '❌ Nuke iptal edildi.', components: [] });
+            }
+        });
+        return;
     }
 });
 

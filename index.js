@@ -3,7 +3,7 @@ const fs = require('fs');
 const {
   Client, GatewayIntentBits, Partials, PermissionFlagsBits: P, ChannelType, EmbedBuilder,
   ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle,
-  AttachmentBuilder, AuditLogEvent, Events, MessageFlags,
+  AttachmentBuilder, AuditLogEvent, Events, MessageFlags, PermissionsBitField,
 } = require('discord.js');
 const { joinVoiceChannel, getVoiceConnection } = require('@discordjs/voice');
 const { createCanvas, loadImage } = require('@napi-rs/canvas');
@@ -116,40 +116,67 @@ async function releaseMute(id) {
 }
 setInterval(() => { for (const [id, m] of Object.entries(db.mutes)) if (Date.now() >= m.until) releaseMute(id); }, 10000);
 
-/* ===================== KURULUM (rol + kanal izinleri) ===================== */
-async function setup(g) {
-  const everyone = g.roles.everyone;
-  // Sunucuda zaten olan roller OLUŞTURULMAZ, sadece bulunur
-  const corum = findRole(g, R.corum), hay = findRole(g, R.hayatsiz);
-  const missing = [R.corum, R.hayatsiz, R.nuke, R.chat, R.ses].filter(n => !findRole(g, n));
-  // Sadece sunucuda olmayan bot rolleri oluşturulur
-  const [mut, sanik, mahkum, bek] = [await ensureRole(g, R.muted, { color: 0x808080 }),
-    await ensureRole(g, R.sanik), await ensureRole(g, R.mahkum), await ensureRole(g, R.bekleyen)];
-  const info = [C.announce, C.roleinfo, C.complaint].map(n => findChan(g, n)?.id);
-  const rules = findChan(g, C.rules), log = findChan(g, C.log);
-  for (const ch of g.channels.cache.values()) {
-    if (ch.isThread() || ch.type === ChannelType.GuildCategory) continue;
-    if (norm(ch.name).startsWith('mahkeme-')) continue;
-    const e = (r, o) => (r ? ch.permissionOverwrites.edit(r, o).catch(() => {}) : null);
-    for (const r of [sanik, mahkum, bek]) await e(r, { ViewChannel: false });
-    if (ch.id === rules?.id) {
-      await e(everyone, { ViewChannel: true, ReadMessageHistory: true, SendMessages: false, AddReactions: false });
-      await e(corum, { SendMessages: true });
-      continue;
-    }
-    if (ch.id === log?.id) { await e(everyone, { ViewChannel: false }); await e(hay, { ViewChannel: false });
-      await e(corum, { ViewChannel: true, SendMessages: true, ReadMessageHistory: true }); continue; }
-    await e(everyone, { ViewChannel: false });
-    await e(hay, { ViewChannel: true });
-    if (info.includes(ch.id)) {
-      await e(everyone, { SendMessages: false });
-      await e(hay, { SendMessages: false, AddReactions: false });
-      await e(corum, { ViewChannel: true, SendMessages: true, ReadMessageHistory: true });
-    }
-    if (ch.isTextBased()) await e(mut, { SendMessages: false, AddReactions: false, SendMessagesInThreads: false, CreatePublicThreads: false });
+/* ===================== KURULUM (kanal izinleri) =====================
+ * - SANIK / mahkum / BEKLEYEN ADAM: hiçbir kanalı göremez (rolü olmayanla aynı).
+ * - Diğer TÜM roller: tüm kanalları görür, yazar, ses kanalına girer.
+ * - susturuldu: kanalları görür, sohbete yazamaz, ses kanalına girer.
+ * - kurallar: herkes görür ama yazamaz. duyuru/rol-bilgilendirme/şikayet: roller görür, sadece çorum yazar.
+ * - log: sadece çorum.
+ * Kanal başına TEK istek atılır (permissionOverwrites.set), mevcut diğer izinler korunur. */
+const isSpecial = ch => /^(mahkeme-|ceza-evi|bekleme)/.test(norm(ch.name)) || !!db.courts[ch.id];
+function permCtx(g) {
+  const blocked = [R.sanik, R.mahkum, R.bekleyen].map(n => findRole(g, n)).filter(Boolean);
+  const bid = new Set(blocked.map(r => r.id));
+  return { everyone: g.roles.everyone, corum: findRole(g, R.corum), muted: findRole(g, R.muted), blocked,
+    allowed: [...g.roles.cache.values()].filter(r => r.id !== g.id && !r.managed && !bid.has(r.id)),
+    rules: findChan(g, C.rules), log: findChan(g, C.log),
+    info: [C.announce, C.roleinfo, C.complaint].map(n => findChan(g, n)?.id).filter(Boolean) };
+}
+async function applyPerms(g, ch, x) {
+  if (ch.isThread() || ch.type === ChannelType.GuildCategory || isSpecial(ch)) return;
+  const map = new Map(ch.permissionOverwrites.cache.map(p => [p.id, { id: p.id, type: p.type,
+    allow: new PermissionsBitField(p.allow), deny: new PermissionsBitField(p.deny) }]));
+  const set = (id, { allow = [], deny = [], clear = [] }) => {
+    const e = map.get(id) || { id, type: 0, allow: new PermissionsBitField(), deny: new PermissionsBitField() };
+    e.allow.remove(...clear, ...deny); e.deny.remove(...clear, ...allow);
+    e.allow.add(...allow); e.deny.add(...deny); map.set(id, e);
+  };
+  const V = P.ViewChannel, H = P.ReadMessageHistory, S = P.SendMessages;
+  const isLog = ch.id === x.log?.id, isRules = ch.id === x.rules?.id, isInfo = x.info.includes(ch.id);
+  if (isLog) {
+    set(x.everyone.id, { deny: [V] });
+    for (const r of x.allowed) set(r.id, { clear: [V] });
+    if (x.corum) set(x.corum.id, { allow: [V, S, H] });
+  } else if (isRules) {
+    set(x.everyone.id, { allow: [V, H], deny: [S, P.AddReactions] });
+    if (x.corum) set(x.corum.id, { allow: [S] });
+  } else {
+    set(x.everyone.id, { deny: [V] });
+    for (const r of x.allowed) set(r.id, { allow: [V, H] });
+    if (isInfo) { set(x.everyone.id, { deny: [V, S, P.AddReactions] }); if (x.corum) set(x.corum.id, { allow: [V, S, H] }); }
   }
+  if (x.muted && ch.isTextBased()) set(x.muted.id, { deny: [S, P.AddReactions, P.SendMessagesInThreads, P.CreatePublicThreads] });
+  for (const r of x.blocked) set(r.id, { deny: [V] });
+  await ch.permissionOverwrites.set([...map.values()]).catch(e => console.error('izin hatası', ch.name, e.message));
+}
+let setupRunning = false;
+async function setup(g) {
+  setupRunning = true;
+  try { return await setupInner(g); } finally { setupRunning = false; }
+}
+async function setupInner(g) {
+  const missing = [R.corum, R.hayatsiz, R.nuke, R.chat, R.ses].filter(n => !findRole(g, n));
+  for (const n of [R.muted, R.sanik, R.mahkum, R.bekleyen]) await ensureRole(g, n, n === R.muted ? { color: 0x808080 } : {});
+  const x = permCtx(g);
+  for (const ch of g.channels.cache.values()) await applyPerms(g, ch, x);
   return missing;
 }
+client.on(Events.ChannelCreate, async ch => { if (ch.guild) { await sleep(1500); applyPerms(ch.guild, ch, permCtx(ch.guild)); } });
+client.on(Events.GuildRoleCreate, async r => {
+  if (r.managed || setupRunning) return; const x = permCtx(r.guild);
+  if (!x.allowed.some(a => a.id === r.id) && !x.blocked.some(a => a.id === r.id)) return;
+  for (const ch of r.guild.channels.cache.values()) await applyPerms(r.guild, ch, x);
+});
 
 /* ===================== GÖRSELLER ===================== */
 async function avatar(user) {

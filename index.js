@@ -1,5 +1,8 @@
 require('dotenv').config();
 const fs = require('fs');
+// Render (Web Service) için port dinleyen küçük sunucu
+require('http').createServer((req, res) => { res.writeHead(200); res.end('LEXO1 aktif'); })
+  .listen(process.env.PORT || 3000, () => console.log('🌐 Web sunucusu açık'));
 const {
   Client, GatewayIntentBits, Partials, PermissionFlagsBits: P, ChannelType, EmbedBuilder,
   ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle,
@@ -101,7 +104,7 @@ async function doMute(member, by, restore = []) {
     restore: [...(db.mutes[member.id]?.restore || []), ...restore] };
   if (by && by.id !== client.user.id) U(by.id).mutesGiven++;
   save();
-  const byName = by?.displayName || by?.username || 'LEXO 1';
+  const byName = by?.displayName || by?.username || 'LEXO1';
   member.send({ content: muteDM(g.name, byName),
     components: [row(btn(`sk:${g.id}:${by?.id || client.user.id}`, 'Bir yetkiliye şikayetimi ilet.', ButtonStyle.Danger))] }).catch(() => {});
 }
@@ -510,7 +513,7 @@ async function handleDM(msg) {
     return;
   }
   if (cmd === '.yardım' || cmd === '.yardim') {
-    return msg.channel.send({ embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle('🛠️ LEXO 1 — Komut Rehberi').addFields(
+    return msg.channel.send({ embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle('🛠️ LEXO1 — Komut Rehberi').addFields(
       { name: 'DM komutları (sadece sana özel)', value: '`.sicil <id>` → Kullanıcının tüm sunucu geçmişini gösterir (rol, mahkeme, küfür, uyarı, nuke, aktiflik...). Altında banla/temizle/gizle butonları çıkar.\n`.sicil <id> göster` → Gizlediğin bir sicili tekrar gösterir.\n`.gizlenendosya` → Log kanalında gizlediğin tüm küfür dosyalarını teker teker listeler.\n`.gizlenendosya <dosyaID>` → Tek bir dosyanın kopyasını gösterir.\n`.yardım` → Bu mesaj.' },
       { name: '! ile başlayan komutlar (çorum)', value: '`!kurallar` → Kurallar kanalına kural metnini gönderir.\n`!rolbilgiler` → rol-bilgilendirme kanalına rol açıklamalarını gönderir.\n`!bitir` → Mahkeme kanalında mahkemeyi bitirir, sanığın rollerini iade eder, kanalı siler.' },
       { name: '. ile başlayan komutlar', value: '`.nuke` → (nuke✅/çorum) Kanalı sıfırlar, onay butonu ister.\n`.mute @k` / `.unmute @k` → (chatyt✅/çorum) 3 dk susturur / kaldırır.\n`.yavaş 0-5` → (chatyt✅/çorum) Yavaş mod.\n`.sesegir <kanal>` / `.sestençık` → (çorum) Botu sese sokar/çıkarır.\n`.uyar <id>` → (çorum, log kanalı) Sebep seçmeli uyarı.\n`.kurulum` → (çorum) Rolleri ve kanal izinlerini kurar.\n`.ship @k`, `.zeka`, `.zekam`, `.kapış @k` → Eğlence kanalında, rolü olan herkes.\n`sa` → Bot "as hoşgeldin bra" der.' },
